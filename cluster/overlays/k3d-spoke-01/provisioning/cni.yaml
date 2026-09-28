@@ -1,0 +1,17 @@
+# LAB: installs the pod network into the new cluster once, before anything else runs.
+# Production equivalent: networkType: OVNKubernetes in install-config (the installer does it).
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: cni-kindnet
+  namespace: k3d-spoke-01
+spec:
+  # CNI is day-0: apply once at creation, day-2 changes go through the spoke's own Argo CD
+  strategy: ApplyOnce
+  # Applies to every Cluster in this namespace carrying the label (see cluster.yaml)
+  clusterSelector:
+    matchLabels:
+      cni: kindnet
+  resources:
+    - kind: ConfigMap
+      name: cni-kindnet

@@ -6,3 +6,11 @@ resources:
   - namespace.yaml
   - cluster.yaml
   - controlplane.yaml
+  - cni.yaml
+configMapGenerator:
+  - name: cni-kindnet
+    namespace: k3d-spoke-01
+    files:
+      - cni/kindnet.yaml
+generatorOptions:
+  disableNameSuffixHash: true

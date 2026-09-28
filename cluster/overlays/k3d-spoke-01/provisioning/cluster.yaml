@@ -8,6 +8,8 @@ metadata:
   annotations:
     # Never let Argo CD delete a cluster (prod: preserveOnDelete on ClusterDeployment)
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
+  labels:
+    cni: kindnet
 spec:
   clusterNetwork:
     pods:
