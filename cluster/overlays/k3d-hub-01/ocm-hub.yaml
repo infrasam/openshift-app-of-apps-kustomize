@@ -1,0 +1,31 @@
+# Hub-only: the OCM hub (lab equivalent of ACM). Spoke overlays never include this.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ocm-hub
+  namespace: openshift-gitops
+  annotations:
+    # After OLM (-10) and Argo CD (-5): the Subscription needs OLM running
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/ocm-hub
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    # The ClusterManager CRD appears only after OLM has installed the operator:
+    # keep retrying instead of failing the first sync
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

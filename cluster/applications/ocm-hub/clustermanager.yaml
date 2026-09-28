@@ -1,0 +1,13 @@
+# The hub itself (ACM equivalent: MultiClusterHub).
+# The CRD is installed by the operator above, so it does not exist on the first sync:
+# skip the dry-run and let the Application retry until the CRD is there.
+apiVersion: operator.open-cluster-management.io/v1
+kind: ClusterManager
+metadata:
+  name: cluster-manager
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  deployOption:
+    mode: Default

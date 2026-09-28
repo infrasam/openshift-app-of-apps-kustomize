@@ -1,0 +1,16 @@
+# Lab: upstream OCM from OperatorHub.io.
+# Production equivalent: name advanced-cluster-management, channel release-2.x,
+# source redhat-operators (or a mirrored catalog in a disconnected environment).
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-manager
+  namespace: open-cluster-management
+spec:
+  name: cluster-manager
+  channel: stable
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: cluster-manager.v1.3.1
+  # TODO(prod): Manual approval so upgrades are deliberate, not automatic
+  installPlanApproval: Automatic
