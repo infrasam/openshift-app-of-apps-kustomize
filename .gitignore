@@ -1,0 +1,21 @@
+# Cluster credentials: a kubeconfig is full admin access to a cluster
+kubeconfig
+*.kubeconfig
+
+# Private keys and cert bundles: CA keys must only live inside the cluster
+*.key
+*.pem
+
+# Local-only files (secrets, per-machine values, OpenBao init output).
+# Convention: anything that must never be pushed is named *.local.yaml / *.local.json
+*.local.yaml
+*.local.json
+
+# Exported lab root CA: regenerated for every new cluster, not source of truth
+lab-ca.crt
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
