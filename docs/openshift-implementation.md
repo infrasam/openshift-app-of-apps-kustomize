@@ -4,40 +4,13 @@ This guide builds the same thing as the lab in this repository, on real infrastr
 OpenShift **hub** running Red Hat Advanced Cluster Management (RHACM) and OpenShift GitOps. The
 hub creates OpenShift **spoke** clusters on vSphere from Git and registers them automatically.
 
-It covers everything the lab does today, plus two production pieces the lab only adds later: the
-External Secrets Operator and shared credentials for all clusters (step 7). It leaves out the
-workarounds the lab needed because it runs on k3d instead of OpenShift (see
-[Lab-only parts you can skip](#lab-only-parts-you-can-skip)).
+It covers everything the lab does today. It leaves out the workarounds the lab needed because it
+runs on k3d instead of OpenShift (see [Lab-only parts you can skip](#lab-only-parts-you-can-skip)).
 
 > **Versions change.** API fields for Hive's vSphere platform, operator channels and release
 > images differ between RHACM and OpenShift versions. Before writing a manifest, check the fields
 > against your cluster with `oc explain <kind>.spec` and use the channels in your catalog
 > (`oc get packagemanifests -n openshift-marketplace`).
-
-## Before you start: choose a provisioning method
-
-`cluster/overlays/<cluster>/provisioning/` is the contract between "how a cluster comes to exist"
-and the rest of the platform. Whatever creates the machines, the folder always ends with a
-`ManagedCluster`. Everything after that is identical: import into RHACM, the hand-over to the
-spoke's own Argo CD, `base` and overlays. Only the contents of `provisioning/` change.
-
-| Method | Who creates the VMs | `provisioning/` contains | Choose it when |
-|---|---|---|---|
-| **A. IPI through Hive** (this guide) | `openshift-install`, run by Hive on the hub, through the vCenter API | `ClusterDeployment`, install-config, `MachinePool`, `ManagedCluster` | The hub may hold a vCenter account with the installer's privileges |
-| **B. UPI, then import** | Terraform or Ansible, in a pipeline | `ManagedCluster`, `KlusterletAddonConfig` and an `auto-import-secret` (an `ExternalSecret` holding the new cluster's kubeconfig or token) | The installer may not have vCenter privileges, or VM placement is controlled elsewhere |
-| **C. Agent-based / `ClusterInstance`** | The agent-based installer, booting VMs that your automation creates | `ClusterInstance` and its templates instead of `ClusterDeployment` | Static IPs without DHCP, or you already use SiteConfig |
-
-Answer these before building the first spoke:
-
-1. May the hub hold a vCenter account with the [IPI privileges](https://docs.openshift.com/container-platform/latest/installing/installing_vsphere/ipi/ipi-vsphere-installation-reqs.html)?
-2. DHCP or static IPs on the machine networks? Check what your OpenShift version's IPI supports.
-3. Who owns DNS and IP reservations (IPAM), and can records be created automatically?
-
-Steps 1 to 7 and 9 to 11 apply to every method. Step 8 shows method A.
-
-Regardless of the method, Terraform or Ansible usually still creates the **prerequisites** once per
-environment: vCenter folders, roles and port groups, DNS records and IP reservations, and the
-secret store entries.
 
 ## Contents
 
@@ -69,97 +42,66 @@ secret store entries.
 
 ## 2. Git repository and branch protection
 
-Use the same layout as this repository. This is every file the guide creates, with the step
-that describes it. `<hub>` is your hub's name (for example `ocp-hub-01`), and the spoke is
-`ocp-prod-01`.
+Use the same layout as this repository. These are all the files this guide creates, with the step
+that describes each one:
 
 ```
 cluster/
-├── base/                                   # Applications EVERY cluster gets
-│   ├── kustomization.yaml                  # 4.1  lists the files below
-│   ├── openshift-gitops.yaml               # 4.2  Application, wave -5
-│   ├── cert-manager.yaml                   # 4.2  Application, wave -3
-│   └── external-secrets.yaml               # 4.2  Application, wave -2
-├── applications/                           # the manifests those Applications point to
-│   ├── openshift-gitops/                   # 3.1 + 4.3  (applied by hand once, then owned by Git)
-│   │   ├── kustomization.yaml
-│   │   ├── namespace.yaml
-│   │   ├── operatorgroup.yaml
-│   │   ├── subscription.yaml
-│   │   └── argocd.yaml                     # settings on the default ArgoCD instance
-│   ├── cert-manager/                       # 4.4
+├── base/                                # Applications every cluster gets
+│   ├── kustomization.yaml
+│   ├── argocd.yaml                      # 4  OpenShift GitOps settings
+│   └── cert-manager.yaml                # 4  Application -> applications/cert-manager
+├── applications/
+│   ├── cert-manager/                    # 4
 │   │   ├── kustomization.yaml
 │   │   ├── namespace.yaml
 │   │   ├── operatorgroup.yaml
 │   │   └── subscription.yaml
-│   ├── external-secrets/                   # 4.5
-│   │   ├── kustomization.yaml
-│   │   ├── namespace.yaml
-│   │   ├── operatorgroup.yaml
-│   │   ├── subscription.yaml
-│   │   └── externalsecretsconfig.yaml
-│   ├── rhacm/                              # 5    hub only
+│   ├── rhacm/                           # 5  hub only
 │   │   ├── kustomization.yaml
 │   │   ├── namespace.yaml
 │   │   ├── operatorgroup.yaml
 │   │   ├── subscription.yaml
 │   │   └── multiclusterhub.yaml
-│   ├── cluster-credentials/                # 7    hub only
+│   ├── cluster-credentials/             # 7  hub only: shared secrets every spoke uses
 │   │   ├── kustomization.yaml
-│   │   ├── vsphere-vc01.yaml               # vsphere-creds + vsphere-certs for vCenter vc01
+│   │   ├── vsphere-vc01.yaml            #    vsphere-creds + vsphere-certs for vCenter vc01
 │   │   └── pull-secret.yaml
-│   └── cluster-imagesets/                  # 8.3  hub only
+│   └── cluster-imagesets/               # 8.3 hub only
 │       ├── kustomization.yaml
 │       └── img4.19.10-x86-64.yaml
 └── overlays/
     ├── <hub>/
-    │   ├── kustomization.yaml              # 4.1  ../../base + the hub-only Applications below
-    │   ├── secret-store.yaml               # 4.6  Application, wave -1
-    │   ├── secret-store/                   # 4.6  this cluster's connection to the secret store
-    │   │   ├── kustomization.yaml
-    │   │   └── clustersecretstore.yaml
-    │   ├── rhacm.yaml                      # 5    Application, wave 0
-    │   ├── cluster-credentials.yaml        # 7    Application, wave 1
-    │   ├── cluster-imagesets.yaml          # 8.3  Application, wave 1
-    │   ├── spoke-provisioning.yaml         # 6.2  ApplicationSet, wave 2
+    │   ├── kustomization.yaml           # ../../base + the Applications below
+    │   ├── rhacm.yaml                   # 5  Application
+    │   ├── cluster-credentials.yaml     # 7  Application
+    │   ├── cluster-imagesets.yaml       # 8.3 Application
+    │   ├── spoke-provisioning.yaml      # 6  ApplicationSet
     │   └── helm/
-    │       ├── bootstrap/                  # 3.2  installed once with helm, never by Argo CD
+    │       ├── bootstrap/               # 3.2 installed once with helm
     │       │   ├── Chart.yaml
     │       │   ├── values.yaml
     │       │   └── templates/
     │       │       ├── clusterrolebinding.yaml
-    │       │       ├── appproject.yaml     # 3.2 + 6.1
-    │       │       ├── application.yaml    # the root Application
+    │       │       ├── appproject.yaml
+    │       │       ├── application.yaml
     │       │       └── argocd-tls-certs.yaml
-    │       └── infra/                      # 4.1  rendered by root: creates the infra Application
+    │       └── infra/                   # 4  creates the infra Application
     │           ├── Chart.yaml
     │           ├── values.yaml
     │           └── templates/application.yaml
     └── ocp-prod-01/
-        ├── provisioning/                   # 8    applied to the HUB: how the spoke is created
-        │   ├── kustomization.yaml          # 8.7
-        │   ├── namespace.yaml              # 8.1
-        │   ├── install-config-externalsecret.yaml   # 8.2
-        │   ├── clusterdeployment.yaml      # 8.4
-        │   ├── machinepool.yaml            # 8.5
-        │   └── managedcluster.yaml         # 8.6
-        └── (kustomization.yaml, helm/)     # 11   what runs ON the spoke, read by its own Argo CD
+        └── provisioning/                # 8  applied to the HUB: how the spoke is created
+            ├── kustomization.yaml
+            ├── namespace.yaml
+            ├── install-config-externalsecret.yaml
+            ├── clusterdeployment.yaml
+            ├── machinepool.yaml
+            └── managedcluster.yaml
 ```
 
-Every folder under `applications/` and every `secret-store/` or `provisioning/` folder has a
-`kustomization.yaml` that lists its files:
-
-```yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - namespace.yaml
-  - operatorgroup.yaml
-  - subscription.yaml
-```
-
-In the steps below, a YAML block with several objects separated by `---` is split into the files
-shown in the tree, one object per file.
+The spoke's own `kustomization.yaml` (what runs **on** the spoke) comes with the next phase, see
+step 11.
 
 Protect `main` before the first cluster depends on it:
 
@@ -174,12 +116,7 @@ Protect `main` before the first cluster depends on it:
 OLM is built into OpenShift, so nothing like the lab's `olm.yaml` is needed. Only two things are
 done by hand, and both are one-time steps. Everything after this comes from Git.
 
-**3.1 Install the operator.** Write the files in `cluster/applications/openshift-gitops/` and apply
-them once by hand. In step 4, `cluster/base/openshift-gitops.yaml` points Argo CD at the same
-folder, so Argo CD adopts the operator without changing it, and upgrades go through Git from then
-on.
-
-`namespace.yaml`, `operatorgroup.yaml`, `subscription.yaml`:
+**3.1 Install the operator** (`oc apply`, or through the console):
 
 ```yaml
 apiVersion: v1
@@ -208,21 +145,10 @@ spec:
   installPlanApproval: Manual      # upgrades are deliberate: approve the InstallPlan
 ```
 
-```bash
-oc apply -f cluster/applications/openshift-gitops/namespace.yaml \
-         -f cluster/applications/openshift-gitops/operatorgroup.yaml \
-         -f cluster/applications/openshift-gitops/subscription.yaml
-```
+The operator creates an Argo CD instance in `openshift-gitops`.
 
-Approve the first InstallPlan (`oc get installplan -n openshift-gitops-operator`). The operator
-then creates an Argo CD instance in `openshift-gitops`.
-
-**3.2 Install the bootstrap chart** in `cluster/overlays/<hub>/helm/bootstrap/`, with Helm, the
-same way as `scripts/bootstrap.sh` step 4.
-This guide uses the operator's default instance, `openshift-gitops`. (The lab runs its own
-instance named `argocd` instead, so its chart binds `argocd-argocd-application-controller`.) On
-OpenShift the chart needs these templates; the lab's `namespace.yaml` and `cluster-info.yaml` are
-not needed:
+**3.2 Install the bootstrap chart** with Helm, the same way as `scripts/bootstrap.sh` step 4.
+It contains four things:
 
 | Template | Purpose |
 |---|---|
@@ -240,96 +166,20 @@ cannot widen the project's own permissions.
 
 ## 4. App of apps and the base layer
 
-**4.1 The app-of-apps chain.** `root` renders `cluster/overlays/<hub>/helm/infra/`, which creates
-one Application, `infra`, pointing at `cluster/overlays/<hub>/`. That folder's
-`kustomization.yaml` pulls in `base` plus the hub-only Applications:
-
-```yaml
-# cluster/overlays/<hub>/kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - ../../base
-  - secret-store.yaml
-  - rhacm.yaml
-  - cluster-credentials.yaml
-  - cluster-imagesets.yaml
-  - spoke-provisioning.yaml
-```
-
-```yaml
-# cluster/base/kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - openshift-gitops.yaml
-  - cert-manager.yaml
-  - external-secrets.yaml
-```
-
-Add each file to the list in the same pull request that creates it. Each file in these lists is
-itself an Argo CD Application. **Sync waves** order them:
+`root` renders `helm/infra`, which creates one Application, `infra`, pointing at the hub's
+overlay. Each file in the overlay is itself an Argo CD Application. **Sync waves** order them:
 
 | Wave | Application | Why this order |
 |---|---|---|
-| -5 | OpenShift GitOps configuration: settings on the default `openshift-gitops` `ArgoCD` CR (health checks, RBAC) | Everything else is deployed by it |
+| -5 | OpenShift GitOps configuration (the `ArgoCD` CR, RBAC, health checks) | Everything else is deployed by it |
 | -3 | cert-manager | Webhooks of later operators need certificates |
-| -2 | External Secrets Operator | Everything that needs a credential depends on it |
-| -1 | `ClusterSecretStore` (the connection to the secret store) | Needs the ESO CRDs |
 | 0 | RHACM (hub only) | Needs OLM and certificates |
-| 1 | Shared cluster credentials (hub only, step 7) | Needs the store and the operator |
-| 1 | `ClusterImageSet`s (hub only, step 8.3) | Needs the Hive CRDs from RHACM |
-| 2 | Spoke provisioning ApplicationSet (hub only) | Needs the Hive and ACM CRDs, and the credentials |
+| 2 | Spoke provisioning ApplicationSet (hub only) | Needs the Hive and ACM CRDs |
 
-**4.2 One Application per component.** Every file in `cluster/base/` and every hub-only file in
-`cluster/overlays/<hub>/` (except the ApplicationSet) follows the same template. Only the name,
-the wave and the path change:
+Argo CD must wait for a child Application to be healthy before it moves to the next wave. Add the
+`Application` health check to the `ArgoCD` CR (see `cluster/base/argocd.yaml`):
 
 ```yaml
-# cluster/base/cert-manager.yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: cert-manager                       # openshift-gitops | external-secrets | secret-store | ...
-  namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "-3"     # from the table above
-spec:
-  project: default
-  source:
-    repoURL: https://git.example.internal/platform/fleet.git
-    targetRevision: main
-    path: cluster/applications/cert-manager   # secret-store: cluster/overlays/<hub>/secret-store
-  destination:
-    server: https://kubernetes.default.svc
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - ServerSideApply=true
-    retry:                                 # CRDs from OLM appear after the first sync
-      limit: 10
-      backoff:
-        duration: 15s
-        factor: 2
-        maxDuration: 3m
-```
-
-For `openshift-gitops.yaml` and anything that manages CRDs, set `prune: false`. Argo CD must never
-remove its own operator or a CRD with objects in it.
-
-**4.3 Argo CD settings** in `cluster/applications/openshift-gitops/argocd.yaml`. Argo CD must wait
-for a child Application to be healthy before it moves to the next wave, so add the `Application`
-health check to the default instance. With `ServerSideApply=true`, Argo CD only owns the fields
-written here and leaves the operator's defaults alone:
-
-```yaml
-apiVersion: argoproj.io/v1beta1
-kind: ArgoCD
-metadata:
-  name: openshift-gitops
-  namespace: openshift-gitops
 spec:
   resourceHealthChecks:
     - group: argoproj.io
@@ -347,9 +197,9 @@ spec:
         return hs
 ```
 
-**4.4 cert-manager.** Use the Red Hat operator instead of the upstream chart. The `Certificate` and
-`ClusterIssuer` APIs are the same. `cluster/applications/cert-manager/`: `namespace.yaml`,
-`operatorgroup.yaml`, `subscription.yaml`:
+**cert-manager.** Use the Red Hat operator instead of the upstream chart. The `Certificate` and
+`ClusterIssuer` APIs are the same.
+`cluster/applications/cert-manager/`:
 
 ```yaml
 apiVersion: v1
@@ -382,88 +232,11 @@ spec:
 Add a `ClusterIssuer` for your internal PKI (for example ADCS or Vault PKI) in a later wave. Public
 ACME does not work for internal-only names.
 
-**4.5 External Secrets Operator.** Use the Red Hat operator (OpenShift 4.20 and later). It supports
-only the AllNamespaces install mode, so its OperatorGroup has no `targetNamespaces`.
-`cluster/applications/external-secrets/`: `namespace.yaml`, `operatorgroup.yaml`,
-`subscription.yaml`, `externalsecretsconfig.yaml`:
-
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: external-secrets-operator
----
-apiVersion: operators.coreos.com/v1
-kind: OperatorGroup
-metadata:
-  name: external-secrets-operator
-  namespace: external-secrets-operator
-spec: {}                           # AllNamespaces
----
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: openshift-external-secrets-operator
-  namespace: external-secrets-operator
-spec:
-  name: openshift-external-secrets-operator
-  channel: stable-v1
-  source: redhat-operators
-  sourceNamespace: openshift-marketplace
-  installPlanApproval: Manual
----
-# The operand: tells the operator to deploy external-secrets. Its CRD appears after install.
-apiVersion: operator.openshift.io/v1alpha1
-kind: ExternalSecretsConfig
-metadata:
-  name: cluster
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-spec: {}
-```
-
-**4.6 The connection to the secret store.** This is per cluster (each cluster authenticates to
-Vault with its own auth mount), so it lives in the hub's overlay, in
-`cluster/overlays/<hub>/secret-store/clustersecretstore.yaml`, with the Application
-`cluster/overlays/<hub>/secret-store.yaml` at wave -1. An example for Vault with Kubernetes
-authentication, where Vault has a role `external-secrets` bound to the service account below:
-
-```yaml
-apiVersion: external-secrets.io/v1
-kind: ClusterSecretStore
-metadata:
-  name: vault
-spec:
-  provider:
-    vault:
-      server: https://vault.example.internal:8200
-      path: secret                 # KV mount
-      version: v2
-      caProvider:                  # trust the corporate CA that signed Vault's certificate
-        type: ConfigMap
-        name: corporate-ca
-        namespace: external-secrets
-        key: ca.crt
-      auth:
-        kubernetes:
-          mountPath: kubernetes-hub
-          role: external-secrets
-          serviceAccountRef:
-            name: external-secrets
-            namespace: external-secrets
-```
-
-Check the service account and namespace the operand runs as in your version
-(`oc get sa -A | grep external-secrets`), and the `external-secrets.io` API version it serves
-(`oc api-resources | grep -i externalsecret`).
-
 ## 5. Install RHACM through GitOps
 
 RHACM belongs in the **hub layer only**. Spoke overlays never include it.
 
-`cluster/applications/rhacm/`: `namespace.yaml`, `operatorgroup.yaml`, `subscription.yaml`,
-`multiclusterhub.yaml`:
+`cluster/applications/rhacm/`: Namespace, OperatorGroup, Subscription and the hub CR.
 
 ```yaml
 # Same namespace name as the OCM upstream in the lab
@@ -505,12 +278,10 @@ metadata:
 spec: {}
 ```
 
-The Application for it, `cluster/overlays/<hub>/rhacm.yaml`, follows the template from 4.2 at
-wave 0. The `retry` block matters here, because the first sync runs before the `MultiClusterHub`
-CRD exists:
+The hub overlay's Application for it (`cluster/overlays/<hub>/rhacm.yaml`) must **retry**,
+because the first sync runs before the `MultiClusterHub` CRD exists:
 
 ```yaml
-# cluster/overlays/<hub>/rhacm.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -553,8 +324,8 @@ oc get managedclusters                                 # local-cluster (the hub 
 
 ## 6. The provisioning ApplicationSet
 
-**6.1 Allow ApplicationSets in the `infra` project.** Add this to
-`cluster/overlays/<hub>/helm/bootstrap/templates/appproject.yaml` and run `helm upgrade` again:
+**6.1 Allow ApplicationSets in the `infra` project.** Add this to the bootstrap chart's
+`appproject.yaml` and run `helm upgrade` again:
 
 ```yaml
   namespaceResourceWhitelist:
@@ -569,7 +340,6 @@ It creates one Application per `cluster/overlays/*/provisioning` folder. A new c
 folder in a pull request, and nothing on the hub has to change.
 
 ```yaml
-# cluster/overlays/<hub>/spoke-provisioning.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -630,11 +400,9 @@ Don't use the RHACM console's **Credentials** page (a Secret labelled
 "Create cluster" wizard, and Hive never reads it. With GitOps it would just be a second copy of the
 vCenter password to keep in sync.
 
-Put the definitions in `cluster/applications/cluster-credentials/`: the two vCenter objects in
-`vsphere-vc01.yaml` and the pull secret in `pull-secret.yaml`. Add the Application
-`cluster/overlays/<hub>/cluster-credentials.yaml` (template from 4.2) to the **hub overlay only**,
-at wave 1, after the operator and the `ClusterSecretStore` from step 4. The store name `vault` and
-the key paths below are examples.
+Put the definitions in `cluster/applications/cluster-credentials/`, and add an Application for them
+to the **hub overlay only**, in a wave after the External Secrets Operator. The store name `vault`
+and the key paths below are examples.
 
 ```yaml
 # vCenter vc01: installer account. One definition per vCenter.
@@ -714,10 +482,6 @@ before you plan a rotation.
 
 ## 8. Define a spoke cluster
 
-This is method A (IPI through Hive). For method B or C, replace 8.2 to 8.5 with the objects from
-the table in [Before you start](#before-you-start-choose-a-provisioning-method); 8.1, 8.6 and 8.7
-stay the same.
-
 Everything below goes in `cluster/overlays/<spoke>/provisioning/`, with a `kustomization.yaml`
 listing each file. The examples use the spoke name `ocp-prod-01`. The **namespace name must equal
 the cluster name**, which is an RHACM convention.
@@ -793,7 +557,7 @@ sshKey: ssh-ed25519 AAAA... ops@example.internal
 ```
 
 Store it in the secret store, and deliver it to the cluster namespace in
-`cluster/overlays/ocp-prod-01/provisioning/install-config-externalsecret.yaml`:
+`install-config-externalsecret.yaml`:
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -813,10 +577,8 @@ spec:
 ```
 
 **8.3 `ClusterImageSet`: which OpenShift release to install.** This object is cluster-scoped and
-shared by all spokes, so it lives on the hub, not in the spoke's folder:
-`cluster/applications/cluster-imagesets/img4.19.10-x86-64.yaml`, with the Application
-`cluster/overlays/<hub>/cluster-imagesets.yaml` (template from 4.2, wave 1). RHACM can also sync a
-curated list of them for you.
+shared by all spokes, so it lives on the hub in `cluster/applications/cluster-imagesets/`, not in
+the spoke's folder.
 
 ```yaml
 apiVersion: hive.openshift.io/v1
