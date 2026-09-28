@@ -4,3 +4,4 @@ resources:
   - ../../base
   - ocm-hub.yaml
   - capi.yaml
+  - spoke-provisioning.yaml
