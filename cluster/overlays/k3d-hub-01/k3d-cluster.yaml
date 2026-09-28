@@ -1,0 +1,41 @@
+# Hub cluster definition (the lab's equivalent of an OpenShift install-config).
+# Create:  k3d cluster create --config cluster/overlays/k3d-hub-01/k3d-cluster.yaml
+# Delete:  k3d cluster delete hub-01
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  # k3d prefixes the kube context with "k3d-" -> context "k3d-hub-01" = overlay name
+  name: hub-01
+servers: 1
+agents: 0
+# Pin the Kubernetes version so a rebuild gives the same cluster
+image: rancher/k3s:v1.35.5-k3s1
+# Shared Docker network with the Cluster API spoke clusters (Phase 4)
+network: kind
+kubeAPI:
+  # Fixed API port instead of a random one, so kubeconfigs stay stable across rebuilds
+  hostPort: "6550"
+ports:
+  # Ingress traffic from the laptop to the Gateway (Phase 2)
+  - port: 80:80
+    nodeFilters:
+      - loadbalancer
+  - port: 443:443
+    nodeFilters:
+      - loadbalancer
+volumes:
+  # Lets Cluster API (CAPD) create spoke clusters as containers (Phase 4).
+  # Gives the cluster root on the host: lab only, never in production.
+  - volume: /var/run/docker.sock:/var/run/docker.sock
+    nodeFilters:
+      - server:*
+options:
+  k3s:
+    extraArgs:
+      # Envoy Gateway replaces the built-in Traefik (OpenShift has no Traefik either)
+      - arg: --disable=traefik
+        nodeFilters:
+          - server:*
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
