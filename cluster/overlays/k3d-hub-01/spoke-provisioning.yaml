@@ -1,0 +1,43 @@
+# Hub-only: one Application per cluster/overlays/<cluster>/provisioning folder.
+# New cluster = new folder in a PR; nothing on the hub needs to change.
+# Production equivalent: ApplicationSet on the ACM hub applying Hive/ClusterInstance objects.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: spoke-provisioning
+  namespace: openshift-gitops
+  annotations:
+    # After Cluster API (1): the Cluster/KubeadmControlPlane CRDs must exist
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  goTemplate: true
+  # Fail on typos in template variables instead of rendering empty strings
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+        revision: main
+        directories:
+          - path: cluster/overlays/*/provisioning
+  template:
+    metadata:
+      # cluster/overlays/k3d-spoke-01/provisioning -> segment 2 = k3d-spoke-01
+      name: '{{ index .path.segments 2 }}-provisioning'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        # The HUB: the manifests set their own namespace (namespace.yaml)
+        server: https://kubernetes.default.svc
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true
+  syncPolicy:
+    # Deleting the ApplicationSet (or a folder) must never delete a running cluster
+    preserveResourcesOnDeletion: true
