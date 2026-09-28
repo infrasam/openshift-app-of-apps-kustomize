@@ -72,6 +72,25 @@ configuration are kept apart:
 |---|---|---|
 | How the cluster is **created and registered** (`provisioning/`) | The hub | The hub's Argo CD, through the ApplicationSet |
 | What **runs inside** the cluster (`kustomization.yaml`, `base` + patches) | The cluster itself | The cluster's own Argo CD |
+| **Shared credentials** for creating clusters (vCenter, pull secret) | The hub, into each cluster namespace that opts in by label | The hub's Argo CD, through a `ClusterExternalSecret` defined once per vCenter |
+
+**`base` is what every cluster must have, not a menu.** Optional apps live in
+`cluster/applications/`, and a cluster lists them in its own `kustomization.yaml`. If one cluster
+needs to skip something from `base`, use a delete patch in that cluster's `patch/` folder, with a
+comment that says why:
+
+```yaml
+# cluster/overlays/<cluster>/patch/remove-cert-manager.yaml
+$patch: delete
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: openshift-gitops
+```
+
+Kustomize fails the build if the patch matches nothing, so a typo shows up in the pull request.
+When many clusters skip the same app, move it out of `base` instead.
 
 ## Lab to production mapping
 
@@ -86,6 +105,7 @@ configuration are kept apart:
 | `networkType: OVNKubernetes` in install-config | kindnet via `ClusterResourceSet` |
 | ACM import controller (built in) | OCM `ClusterImporter` feature gate |
 | `ManagedCluster` | `ManagedCluster` (same API) |
+| vCenter credentials and pull secret: `ClusterExternalSecret` per vCenter | Not needed yet: Docker needs no credentials |
 | Internal Git server | GitHub (public, so no environment data or secrets) |
 
 ## Safety rails
@@ -159,6 +179,7 @@ kubectl --kubeconfig /tmp/k3d-spoke-01.kubeconfig get nodes
 | Spoke provisioning from Git, CNI, auto-import into OCM | Done |
 | Argo CD + root app on the spoke, installed by the hub | Next |
 | Internal CA, Gateway API ingress, OpenBao + External Secrets | Planned |
+| Shared credentials for all clusters through a `ClusterExternalSecret` in the hub layer | Planned, together with External Secrets |
 | Fleet governance with OCM policies | Planned |
 
 **Known lab limitations:**
