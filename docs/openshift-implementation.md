@@ -20,10 +20,11 @@ runs on k3d instead of OpenShift (see [Lab-only parts you can skip](#lab-only-pa
 4. [App of apps and the base layer](#4-app-of-apps-and-the-base-layer)
 5. [Install RHACM through GitOps](#5-install-rhacm-through-gitops)
 6. [The provisioning ApplicationSet](#6-the-provisioning-applicationset)
-7. [Define a spoke cluster](#7-define-a-spoke-cluster)
-8. [Verify](#8-verify)
-9. [Operational guardrails](#9-operational-guardrails)
-10. [Next steps](#10-next-steps)
+7. [Shared credentials for all clusters](#7-shared-credentials-for-all-clusters)
+8. [Define a spoke cluster](#8-define-a-spoke-cluster)
+9. [Verify](#9-verify)
+10. [Operational guardrails](#10-operational-guardrails)
+11. [Next steps](#11-next-steps)
 
 ---
 
@@ -331,87 +332,130 @@ spec:
 
 The template has no `resources-finalizer`, so deleting a generated Application leaves the
 cluster's objects in place. Consider a dedicated AppProject, for example `cluster-provisioning`,
-that may only create the kinds listed in the next step.
+that may only create the kinds listed in step 8.
 
-## 7. Define a spoke cluster
+## 7. Shared credentials for all clusters
+
+Every `ClusterDeployment` needs the same three Secrets **in its own namespace**: the vCenter
+credentials, the vCenter CA certificate and the pull secret. You could repeat an `ExternalSecret`
+for each of them in every spoke folder. The cleaner way is to define each one **once**, in the hub
+layer, with a `ClusterExternalSecret`. The External Secrets Operator then creates the
+`ExternalSecret` in every namespace that opts in with a label.
+
+- **One place per vCenter.** Rotate the installer account's password in the secret store, and
+  every cluster namespace on the hub picks it up.
+- **Several vCenters.** Add one definition per vCenter, and move a cluster by changing its label.
+- **Small spoke folders.** They only hold what is unique to the cluster.
+
+Don't use the RHACM console's **Credentials** page (a Secret labelled
+`cluster.open-cluster-management.io/type: vmw`) for this. That Secret only feeds the console's
+"Create cluster" wizard, and Hive never reads it. With GitOps it would just be a second copy of the
+vCenter password to keep in sync.
+
+Put the definitions in `cluster/applications/cluster-credentials/`, and add an Application for them
+to the **hub overlay only**, in a wave after the External Secrets Operator. The store name `vault`
+and the key paths below are examples.
+
+```yaml
+# vCenter vc01: installer account. One definition per vCenter.
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: vsphere-creds-vc01
+spec:
+  externalSecretName: vsphere-creds
+  namespaceSelectors:
+    - matchLabels:
+        platform.example.internal/vcenter: vc01
+  refreshTime: 1h
+  externalSecretSpec:
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault
+    target:
+      name: vsphere-creds
+    data:
+      - secretKey: username
+        remoteRef: { key: vsphere/vc01/ocp-installer, property: username }
+      - secretKey: password
+        remoteRef: { key: vsphere/vc01/ocp-installer, property: password }
+---
+# vCenter vc01: CA certificate, so the installer trusts vCenter's TLS certificate
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: vsphere-certs-vc01
+spec:
+  externalSecretName: vsphere-certs
+  namespaceSelectors:
+    - matchLabels:
+        platform.example.internal/vcenter: vc01
+  externalSecretSpec:
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault
+    target:
+      name: vsphere-certs
+    data:
+      - secretKey: .cacert
+        remoteRef: { key: vsphere/vc01/ca, property: cert }
+---
+# Red Hat pull secret (or mirror registry credentials): the same for every cluster
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: pull-secret
+spec:
+  externalSecretName: pull-secret
+  namespaceSelectors:
+    - matchLabels:
+        platform.example.internal/managed-cluster: "true"
+  externalSecretSpec:
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault
+    target:
+      name: pull-secret
+      template:
+        type: kubernetes.io/dockerconfigjson
+    data:
+      - secretKey: .dockerconfigjson
+        remoteRef: { key: openshift/pull-secret, property: dockerconfigjson }
+```
+
+Check the `external-secrets.io` API version your operator serves
+(`oc api-resources | grep -i externalsecret`).
+
+**Rotation caveat.** An installed OpenShift cluster keeps its **own** copy of the vSphere
+credentials in `kube-system/vsphere-creds`, which the Machine API and the vSphere CSI driver use.
+Rotating the credential on the hub updates what Hive uses for new installs and MachinePools. Don't
+assume it reaches spokes that are already running: check how your RHACM/Hive version handles it
+before you plan a rotation.
+
+## 8. Define a spoke cluster
 
 Everything below goes in `cluster/overlays/<spoke>/provisioning/`, with a `kustomization.yaml`
 listing each file. The examples use the spoke name `ocp-prod-01`. The **namespace name must equal
 the cluster name**, which is an RHACM convention.
 
-**7.1 `namespace.yaml`**
+**8.1 `namespace.yaml`**: the labels opt the namespace in to the shared credentials from step 7.
 
 ```yaml
 apiVersion: v1
 kind: Namespace
 metadata:
   name: ocp-prod-01
+  labels:
+    # vsphere-creds + vsphere-certs for the vCenter this cluster runs on
+    platform.example.internal/vcenter: vc01
+    # pull-secret
+    platform.example.internal/managed-cluster: "true"
 ```
 
-**7.2 `externalsecrets.yaml`: credentials from the secret store.** Three Secrets are needed: the
-pull secret, the vCenter credentials, and the vCenter CA certificate. The store name
-`vault` and the key paths below are examples.
-
-```yaml
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: pull-secret
-  namespace: ocp-prod-01
-spec:
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: vault
-  target:
-    name: pull-secret
-    template:
-      type: kubernetes.io/dockerconfigjson
-  data:
-    - secretKey: .dockerconfigjson
-      remoteRef:
-        key: openshift/pull-secret
-        property: dockerconfigjson
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: vsphere-creds
-  namespace: ocp-prod-01
-spec:
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: vault
-  target:
-    name: vsphere-creds
-  data:
-    - secretKey: username
-      remoteRef: { key: vsphere/ocp-installer, property: username }
-    - secretKey: password
-      remoteRef: { key: vsphere/ocp-installer, property: password }
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: vsphere-certs
-  namespace: ocp-prod-01
-spec:
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: vault
-  target:
-    name: vsphere-certs
-  data:
-    - secretKey: .cacert
-      remoteRef: { key: vsphere/vcenter-ca, property: cert }
-```
-
-Check the `external-secrets.io` API version your operator serves (`oc api-resources | grep
-externalsecret`).
-
-**7.3 `install-config`: the cluster's installation parameters.** Hive reads it from a Secret.
-It describes the network (machine CIDR, VIPs) and vCenter, so keep it in the secret store and
-deliver it with an `ExternalSecret`, the same way as 7.2. A minimal example of the content for
-vSphere IPI on OpenShift 4.13+:
+**8.2 `install-config`: the cluster's installation parameters.** This is the only credential-like
+object that is unique to the cluster. Hive reads it from a Secret. It describes the network
+(machine CIDR, VIPs) and vCenter, so keep it in the secret store, not in Git. A minimal example of
+the content for vSphere IPI on OpenShift 4.13+:
 
 ```yaml
 apiVersion: v1
@@ -464,11 +508,27 @@ pullSecret: ""                        # injected by Hive from pull-secret
 sshKey: ssh-ed25519 AAAA... ops@example.internal
 ```
 
-Store it in the secret store. Then add a fourth `ExternalSecret` to `externalsecrets.yaml` that
-creates a Secret named `ocp-prod-01-install-config`, with the content under the key
-`install-config.yaml`.
+Store it in the secret store, and deliver it to the cluster namespace in
+`install-config-externalsecret.yaml`:
 
-**7.4 `clusterimageset.yaml`: which OpenShift release to install.** This object is
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ocp-prod-01-install-config
+  namespace: ocp-prod-01
+spec:
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: vault
+  target:
+    name: ocp-prod-01-install-config
+  data:
+    - secretKey: install-config.yaml
+      remoteRef: { key: clusters/ocp-prod-01/install-config, property: install-config.yaml }
+```
+
+**8.3 `clusterimageset.yaml`: which OpenShift release to install.** This object is
 cluster-scoped, so it can be shared between spokes, for example from the hub overlay. RHACM can
 also sync a curated list of them for you.
 
@@ -481,7 +541,7 @@ spec:
   releaseImage: quay.io/openshift-release-dev/ocp-release:4.19.10-x86_64
 ```
 
-**7.5 `clusterdeployment.yaml`: the cluster itself.** This is the object that replaces the lab's
+**8.4 `clusterdeployment.yaml`: the cluster itself.** This is the object that replaces the lab's
 Cluster API `Cluster`.
 
 ```yaml
@@ -523,7 +583,7 @@ spec:
     name: pull-secret
 ```
 
-**7.6 `machinepool.yaml`: the worker nodes.**
+**8.5 `machinepool.yaml`: the worker nodes.**
 
 ```yaml
 apiVersion: hive.openshift.io/v1
@@ -545,7 +605,7 @@ spec:
         diskSizeGB: 120
 ```
 
-**7.7 `managedcluster.yaml`: registration in RHACM.** This is the same API as in the lab. Together
+**8.6 `managedcluster.yaml`: registration in RHACM.** This is the same API as in the lab. Together
 with `KlusterletAddonConfig`, it makes RHACM import the cluster as soon as Hive has installed it.
 
 ```yaml
@@ -581,14 +641,14 @@ spec:
     enabled: true
 ```
 
-**7.8 `kustomization.yaml`**
+**8.7 `kustomization.yaml`**
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
-  - externalsecrets.yaml
+  - install-config-externalsecret.yaml
   - clusterdeployment.yaml
   - machinepool.yaml
   - managedcluster.yaml
@@ -600,13 +660,14 @@ Render it before you commit:
 kustomize build cluster/overlays/ocp-prod-01/provisioning
 ```
 
-## 8. Verify
+## 9. Verify
 
 After the pull request is merged, the ApplicationSet creates `ocp-prod-01-provisioning`.
 Installation takes 40–60 minutes.
 
 ```bash
 oc -n openshift-gitops get applications ocp-prod-01-provisioning
+oc get clusterexternalsecrets                                # the shared definitions from step 7
 oc -n ocp-prod-01 get externalsecrets                        # SecretSynced
 oc -n ocp-prod-01 get clusterdeployment                      # INSTALLED becomes true
 oc -n ocp-prod-01 get pods                                   # the *-provision-* pod runs the installer
@@ -621,7 +682,7 @@ oc -n ocp-prod-01 get clusterdeployment ocp-prod-01 \
   -o jsonpath='{.spec.clusterMetadata.adminKubeconfigSecretRef.name}'
 ```
 
-## 9. Operational guardrails
+## 10. Operational guardrails
 
 | Guardrail | Where |
 |---|---|
@@ -634,9 +695,10 @@ oc -n ocp-prod-01 get clusterdeployment ocp-prod-01 \
 | `preserveOnDelete: true` on `ClusterDeployment` | `provisioning/clusterdeployment.yaml` |
 | AppProject limits set by Helm, not by Git | Bootstrap chart |
 | No credentials, kubeconfigs or keys in Git, only `ExternalSecret` references | Everywhere |
+| Shared credentials (vCenter, pull secret) defined once per vCenter in the hub layer; cluster namespaces opt in by label | `cluster/applications/cluster-credentials/` |
 | Do not use **Replace**, **Force** or **Prune** on manual syncs of the hub's platform Applications. They delete and recreate resources, which briefly removes webhooks for the whole fleet. | Argo CD UI, runbook |
 
-## 10. Next steps
+## 11. Next steps
 
 These are the next phases of the lab. Add them here as they are completed.
 
