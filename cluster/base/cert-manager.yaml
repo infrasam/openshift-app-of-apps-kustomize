@@ -1,1 +1,37 @@
-here cert-manager should be defined.
+# cert-manager on every cluster: issues and renews TLS certificates.
+# Lab: upstream Helm chart. Production equivalent: the "cert-manager Operator for
+# Red Hat OpenShift" via OLM. The ClusterIssuer/Certificate API is the same in both.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: openshift-gitops
+  annotations:
+    # After Argo CD (-5), before anything that requests certificates
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.21.2
+    helm:
+      valuesObject:
+        crds:
+          # Install the CRDs with the chart, and keep them if the app is ever deleted:
+          # deleting the CRDs would delete every Certificate in the cluster
+          enabled: true
+          keep: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
