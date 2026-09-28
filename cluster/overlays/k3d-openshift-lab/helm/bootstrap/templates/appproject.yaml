@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: infra
+  namespace: {{ .Values.argocdNamespace }}
+spec:
+  description: App-of-apps layer for {{ .Values.cluster }}
+  sourceRepos:
+    - {{ .Values.repoURL }}
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: {{ .Values.argocdNamespace }}
+  namespaceResourceWhitelist:
+    - group: argoproj.io
+      kind: Application
+

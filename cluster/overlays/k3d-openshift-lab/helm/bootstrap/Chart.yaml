@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bootstrap
+description: One-time cluster bootstrap for Argo CD (namespace, RBAC, project, root app)
+type: application
+version: 0.1.0
+

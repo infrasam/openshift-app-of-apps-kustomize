@@ -1,0 +1,9 @@
+repoURL: https://github.com/infrasam/kubernetes-app-of-apps-kustomize.git
+targetRevision: main
+argocdNamespace: openshift-gitops
+project: infra
+
+applications:
+  - name: infra
+    path: cluster/overlays/k3d-openshift-lab
+
