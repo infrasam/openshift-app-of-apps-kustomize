@@ -37,42 +37,74 @@ flowchart LR
 
 ```
 cluster/
-├── base/                      # Argo CD Applications every cluster gets
-│   ├── olm.yaml               #   wave -10  Operator Lifecycle Manager (built into OpenShift)
-│   ├── argocd.yaml            #   wave  -5  Argo CD operator + instance (= OpenShift GitOps)
-│   └── cert-manager.yaml      #   wave  -3  cert-manager
-├── applications/              # Plain manifests that an Application points to
-│   └── ocm-hub/               #   OCM hub via OLM (= RHACM MultiClusterHub)
+├── base/                                  # Argo CD Applications EVERY cluster gets
+│   ├── kustomization.yaml
+│   ├── olm.yaml                           #   wave -10  Operator Lifecycle Manager (built into OpenShift)
+│   ├── argocd.yaml                        #   wave  -5  Argo CD operator + instance (= OpenShift GitOps)
+│   └── cert-manager.yaml                  #   wave  -3  cert-manager
+├── applications/                          # plain manifests that an Application points to
+│   └── ocm-hub/                           #   OCM hub via OLM (= RHACM MultiClusterHub)
+│       ├── kustomization.yaml
+│       ├── namespace.yaml
+│       ├── operatorgroup.yaml
+│       ├── subscription.yaml
+│       ├── clustermanager.yaml            #   the hub, with auto-import of CAPI clusters enabled
+│       └── bootstrap-sa.yaml              #   identity new clusters use to ask to join
 └── overlays/
-    ├── k3d-hub-01/            # The hub
-    │   ├── k3d-cluster.yaml   #   how the hub itself is created
-    │   ├── kustomization.yaml #   what runs ON the hub: base + hub-only apps
-    │   ├── ocm-hub.yaml       #   hub-only: OCM hub
-    │   ├── capi.yaml          #   hub-only: Cluster API (= Hive)
-    │   ├── spoke-provisioning.yaml  # hub-only: ApplicationSet over */provisioning
+    ├── k3d-hub-01/                        # the hub
+    │   ├── k3d-cluster.yaml               #   how the hub itself is created (k3d)
+    │   ├── kustomization.yaml             #   what runs ON the hub: ../../base + the files below
+    │   ├── ocm-hub.yaml                   #   Application, wave 0: OCM hub
+    │   ├── capi.yaml                      #   Application, wave 1: Cluster API (= Hive)
+    │   ├── spoke-provisioning.yaml        #   ApplicationSet, wave 2: one Application per */provisioning
+    │   ├── patch/
+    │   │   └── argocd-patch.yaml          #   hub-specific patches to base
     │   └── helm/
-    │       ├── bootstrap/     #   one-time Helm install: namespace, RBAC, AppProject, root app
-    │       └── infra/         #   app-of-apps layer rendered by the root app
-    └── k3d-spoke-01/          # A spoke
-        └── provisioning/      #   applied to the HUB: how this cluster is created and registered
+    │       ├── bootstrap/                 #   installed once with helm, never by Argo CD
+    │       │   ├── Chart.yaml
+    │       │   ├── values.yaml
+    │       │   └── templates/
+    │       │       ├── namespace.yaml
+    │       │       ├── clusterrolebinding.yaml
+    │       │       ├── appproject.yaml    #     the infra project and its limits
+    │       │       ├── application.yaml   #     the root Application
+    │       │       ├── argocd-tls-certs.yaml  # optional extra CAs, from a local values file
+    │       │       └── cluster-info.yaml  #     the hub's API address for joining clusters
+    │       └── infra/                     #   rendered by root: creates the infra Application
+    │           ├── Chart.yaml
+    │           ├── values.yaml
+    │           └── templates/application.yaml
+    └── k3d-spoke-01/                      # a spoke
+        ├── (kustomization.yaml, helm/)    #   next step: what runs ON the spoke, read by its own Argo CD
+        └── provisioning/                  #   applied to the HUB: how this cluster is created and registered
+            ├── kustomization.yaml
             ├── namespace.yaml
-            ├── cluster.yaml         # Cluster API Cluster (= Hive ClusterDeployment)
-            ├── controlplane.yaml    # control plane + machine template (= install-config/MachinePool)
-            ├── cni.yaml, cni/       # pod network, installed once (= networkType in install-config)
-            ├── managedcluster.yaml  # OCM registration (identical API in RHACM)
-            └── import-rbac.yaml     # lets OCM read this cluster's kubeconfig
+            ├── cluster.yaml               #   Cluster API Cluster (= Hive ClusterDeployment)
+            ├── controlplane.yaml          #   control plane + machine template (= install-config/MachinePool)
+            ├── cni.yaml                   #   ClusterResourceSet: pod network, installed once
+            ├── cni/kindnet.yaml           #   (= networkType in install-config)
+            ├── managedcluster.yaml        #   OCM registration (identical API in RHACM)
+            └── import-rbac.yaml           #   lets OCM read this cluster's kubeconfig
+docs/
+└── openshift-implementation.md            # step-by-step guide for real OpenShift + RHACM
 scripts/
-└── bootstrap.sh               # idempotent: k3d -> OLM -> Argo CD -> bootstrap chart
+└── bootstrap.sh                           # idempotent: k3d -> OLM -> Argo CD -> bootstrap chart
 ```
 
-**One cluster, one folder.** Everything about a cluster lives in its overlay. Two kinds of
+**One cluster, one folder.** Everything about a cluster lives in its overlay. Three kinds of
 configuration are kept apart:
 
 | What | Applied to | By |
 |---|---|---|
 | How the cluster is **created and registered** (`provisioning/`) | The hub | The hub's Argo CD, through the ApplicationSet |
-| What **runs inside** the cluster (`kustomization.yaml`, `base` + patches) | The cluster itself | The cluster's own Argo CD |
-| **Shared credentials** for creating clusters (vCenter, pull secret) | The hub, into each cluster namespace that opts in by label | The hub's Argo CD, through a `ClusterExternalSecret` defined once per vCenter |
+| What **runs inside** the cluster (`kustomization.yaml`, `base` + patches) | The cluster itself | The cluster's own Argo CD (next step in the lab) |
+| **Shared credentials** for creating clusters (vCenter, pull secret) | The hub, into each cluster namespace that opts in by label | The hub's Argo CD, through a `ClusterExternalSecret` defined once per vCenter (production; planned in the lab) |
+
+**`provisioning/` is the contract.** Whatever creates the machines, the folder always ends with a
+`ManagedCluster`. Everything after that (import, hand-over to the spoke's Argo CD, `base`) is the
+same. So the pattern works whether production clusters are installed by Hive (IPI), by
+Terraform/Ansible and then imported (UPI), or by the agent-based installer. The guide describes
+each method.
 
 **`base` is what every cluster must have, not a menu.** Optional apps live in
 `cluster/applications/`, and a cluster lists them in its own `kustomization.yaml`. If one cluster
