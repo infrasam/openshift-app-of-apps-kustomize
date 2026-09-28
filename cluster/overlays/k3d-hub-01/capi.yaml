@@ -1,0 +1,44 @@
+# LAB ONLY: Cluster API, a stand-in for Hive (which ships with ACM/MCE in production).
+# Creates the spoke clusters defined in cluster/overlays/<spoke>/provisioning/;
+# the Docker provider runs "machines" as containers.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: capi
+  namespace: openshift-gitops
+  annotations:
+    # Needs cert-manager (-3) for its webhook certificates
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/cluster-api-operator
+    chart: cluster-api-operator
+    targetRevision: 0.29.0
+    helm:
+      valuesObject:
+        # All providers pinned to the same Cluster API release
+        core:
+          cluster-api:
+            version: v1.14.2
+        bootstrap:
+          kubeadm:
+            version: v1.14.2
+        controlPlane:
+          kubeadm:
+            version: v1.14.2
+        # Docker provider: needs the host's Docker socket (see k3d-cluster.yaml).
+        # Production equivalent: Hive creating VMs in vCenter.
+        infrastructure:
+          docker:
+            version: v1.14.2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: capi-operator-system
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

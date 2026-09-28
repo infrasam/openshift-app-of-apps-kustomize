@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - ../../base
   - ocm-hub.yaml
+  - capi.yaml
