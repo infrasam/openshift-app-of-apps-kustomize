@@ -1,0 +1,40 @@
+# Identity that new clusters use for their FIRST contact with the hub (then they get
+# their own certificate). clusteradm/the upstream Helm chart create it; OLM does not.
+# Production equivalent: created by ACM (managedcluster-import-controller).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-registration-bootstrap
+  namespace: open-cluster-management
+---
+# Minimal rights: ask to join (CSR + ManagedCluster), nothing else
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: open-cluster-management:bootstrap
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+  - apiGroups: ["certificates.k8s.io"]
+    resources: ["certificatesigningrequests"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: ["cluster.open-cluster-management.io"]
+    resources: ["managedclusters"]
+    verbs: ["get", "create", "list", "watch"]
+  - apiGroups: ["cluster.open-cluster-management.io"]
+    resources: ["managedclustersets/join"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: open-cluster-management:bootstrap:agent-registration
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: open-cluster-management:bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: agent-registration-bootstrap
+    namespace: open-cluster-management
