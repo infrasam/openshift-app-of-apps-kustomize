@@ -1,0 +1,6 @@
+# Each managed cluster gets its own namespace on the HUB, named after the cluster
+# (same convention as ACM/Hive).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k3d-spoke-01

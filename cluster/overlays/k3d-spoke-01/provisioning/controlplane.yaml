@@ -1,0 +1,35 @@
+# LAB: one control-plane node that also runs workloads (no workers, to save RAM).
+# Production equivalent: install-config (controlPlane replicas: 3) + master MachinePool.
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+metadata:
+  name: k3d-spoke-01-control-plane
+  namespace: k3d-spoke-01
+spec:
+  replicas: 1
+  # Same Kubernetes version as the hub; CAPD uses the kindest/node:<version> image
+  version: v1.35.5
+  machineTemplate:
+    spec:
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: DevMachineTemplate
+        name: k3d-spoke-01-control-plane
+  kubeadmConfigSpec:
+    initConfiguration:
+      nodeRegistration:
+        # Remove the default control-plane taint so pods can run without worker nodes
+        taints: []
+---
+# What each control-plane "machine" looks like: a Docker container.
+# Production equivalent: vSphere VM template (CPU, memory, disk, network).
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: DevMachineTemplate
+metadata:
+  name: k3d-spoke-01-control-plane
+  namespace: k3d-spoke-01
+spec:
+  template:
+    spec:
+      backend:
+        docker: {}
