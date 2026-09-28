@@ -8,6 +8,7 @@ resources:
   - controlplane.yaml
   - cni.yaml
   - managedcluster.yaml
+  - import-rbac.yaml
 configMapGenerator:
   - name: cni-kindnet
     namespace: k3d-spoke-01

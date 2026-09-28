@@ -1,0 +1,27 @@
+# Lets OCM's registration controller read THIS cluster's admin kubeconfig (created by
+# Cluster API) so it can install the klusterlet. Least privilege: one namespace, one Secret.
+# Production: not needed, ACM's import controller already has this access for Hive clusters.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ocm-import-kubeconfig
+  namespace: k3d-spoke-01
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["k3d-spoke-01-kubeconfig"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ocm-import-kubeconfig
+  namespace: k3d-spoke-01
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ocm-import-kubeconfig
+subjects:
+  - kind: ServiceAccount
+    name: registration-controller-sa
+    namespace: open-cluster-management-hub
