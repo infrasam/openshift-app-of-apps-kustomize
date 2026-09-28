@@ -1,4 +1,4 @@
-cluster: k3d-openshift-lab
+cluster: k3d-hub-01
 repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
 targetRevision: main
 argocdNamespace: openshift-gitops

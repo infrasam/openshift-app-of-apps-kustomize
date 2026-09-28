@@ -5,5 +5,5 @@ project: infra
 
 applications:
   - name: infra
-    path: cluster/overlays/k3d-openshift-lab
+    path: cluster/overlays/k3d-hub-01
 
