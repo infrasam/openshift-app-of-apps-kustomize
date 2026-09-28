@@ -7,6 +7,8 @@ resources:
   - cluster.yaml
   - controlplane.yaml
   - cni.yaml
+  - managedcluster.yaml
+  - managedcluster.yaml
 configMapGenerator:
   - name: cni-kindnet
     namespace: k3d-spoke-01

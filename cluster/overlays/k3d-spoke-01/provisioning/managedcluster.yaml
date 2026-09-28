@@ -1,0 +1,13 @@
+# Registers the spoke in OCM. Same name as the CAPI Cluster and its namespace, so the
+# ClusterImporter finds k3d-spoke-01/k3d-spoke-01-kubeconfig and installs the klusterlet.
+# Production: identical API in ACM, next to the Hive ClusterDeployment.
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: k3d-spoke-01
+  annotations:
+    # Never let Argo CD remove the registration (in ACM this can tear down the cluster)
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  # The hub accepts this cluster; its join request (CSR) is auto-approved
+  hubAcceptsClient: true
