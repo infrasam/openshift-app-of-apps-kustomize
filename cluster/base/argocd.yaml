@@ -30,6 +30,7 @@ spec:
         argocd_cr:
           initialRepositories: null
           resourceExclusions: null
+          repositoryCredentials: null
           sso: null
           rbac:
             defaultPolicy: role:readonly
