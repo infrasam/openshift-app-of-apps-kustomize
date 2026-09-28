@@ -13,14 +13,16 @@ image: rancher/k3s:v1.35.5-k3s1
 # Shared Docker network with the Cluster API spoke clusters (Phase 4)
 network: kind
 kubeAPI:
+  # Bound to localhost only: not reachable from other hosts on the LAN.
   # Fixed API port instead of a random one, so kubeconfigs stay stable across rebuilds
+  hostIP: "127.0.0.1"
   hostPort: "6550"
 ports:
   # Ingress traffic from the laptop to the Gateway (Phase 2)
-  - port: 80:80
+  - port: 127.0.0.1:80:80
     nodeFilters:
       - loadbalancer
-  - port: 443:443
+  - port: 127.0.0.1:443:443
     nodeFilters:
       - loadbalancer
 volumes:
