@@ -10,7 +10,10 @@ spec:
   destinations:
     - server: https://kubernetes.default.svc
       namespace: {{ .Values.argocdNamespace }}
+  # The infra layer may only create Argo CD objects, nothing else
   namespaceResourceWhitelist:
     - group: argoproj.io
       kind: Application
-
+    # Hub: generates one Application per spoke (cluster provisioning)
+    - group: argoproj.io
+      kind: ApplicationSet
