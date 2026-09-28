@@ -1,0 +1,15 @@
+{{- if .Values.tlsCerts }}
+# Extra CAs Argo CD trusts per Git/Helm host (e.g. a corporate TLS-inspection proxy).
+# Supplied at bootstrap from a local values file that is never committed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-tls-certs-cm
+  namespace: {{ .Values.argocdNamespace }}
+data:
+  {{- range $host, $cert := .Values.tlsCerts }}
+  {{ $host }}: |
+    {{- $cert | nindent 4 }}
+  {{- end }}
+{{- end }}
+
