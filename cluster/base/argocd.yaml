@@ -12,7 +12,9 @@ spec:
     chart: gitops-operator
     targetRevision: 0.10.6
     helm:
-      valuesObject:
+      # Plain-text values instead of valuesObject: Kubernetes strips null fields from
+      # stored objects, and the nulls below are needed to remove chart defaults.
+      values: |
         name: argocd
         ignoreHelmHooks: true
         namespaces:
