@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: {{ .Values.argocdNamespace }}
+spec:
+  project: infra
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: cluster/overlays/{{ .Values.cluster }}/helm/infra
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.argocdNamespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+

@@ -5,3 +5,4 @@ metadata:
 
 resources:
   - olm.yaml
+  - argocd.yaml
