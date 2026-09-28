@@ -1,0 +1,21 @@
+{{- /* Look up the hub's CA at install time: it is regenerated on every hub rebuild */}}
+{{- $rootCA := lookup "v1" "ConfigMap" "kube-public" "kube-root-ca.crt" }}
+{{- if not $rootCA }}
+{{- fail "kube-public/kube-root-ca.crt not found: run helm upgrade against the hub, not helm template" }}
+{{- end }}
+# Public "how to reach this hub" info (kubeadm convention, k3s does not create it).
+# OCM reads it to build the bootstrap kubeconfig for auto-imported clusters.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-info
+  namespace: kube-public
+data:
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: ""
+        cluster:
+          server: {{ .Values.hubApiServerURL }}
+          certificate-authority-data: {{ index $rootCA.data "ca.crt" | b64enc }}
