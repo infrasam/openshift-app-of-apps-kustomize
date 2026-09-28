@@ -1,0 +1,35 @@
+# LAB: Cluster API definition of the spoke, applied to the HUB.
+# Production equivalent: Hive ClusterDeployment with vSphere platform settings.
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: k3d-spoke-01
+  namespace: k3d-spoke-01
+  annotations:
+    # Never let Argo CD delete a cluster (prod: preserveOnDelete on ClusterDeployment)
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["10.244.0.0/16"]
+    services:
+      cidrBlocks: ["10.96.0.0/12"]
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: KubeadmControlPlane
+    name: k3d-spoke-01-control-plane
+  infrastructureRef:
+    apiGroup: infrastructure.cluster.x-k8s.io
+    kind: DevCluster
+    name: k3d-spoke-01
+---
+# Infrastructure for the cluster: CAPD runs a load balancer container in front of the API.
+# Production equivalent: vSphere platform section (vCenter, datacenter, network, API VIP).
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: DevCluster
+metadata:
+  name: k3d-spoke-01
+  namespace: k3d-spoke-01
+spec:
+  backend:
+    docker: {}
