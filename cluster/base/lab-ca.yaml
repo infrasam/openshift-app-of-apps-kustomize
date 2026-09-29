@@ -1,0 +1,33 @@
+# Internal CA on every cluster: the ClusterIssuer "lab-ca" that all certificates use.
+# Production equivalent: the ADCS / Vault PKI ClusterIssuer (see applications/lab-ca/).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-ca
+  namespace: openshift-gitops
+  annotations:
+    # After cert-manager (-3): needs the ClusterIssuer/Certificate CRDs
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/lab-ca
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      # Never prune the root CA: a new root would invalidate every issued certificate
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    # On a fresh cluster the cert-manager CRDs appear after OLM installs the operator:
+    # keep retrying instead of failing the first sync
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m
