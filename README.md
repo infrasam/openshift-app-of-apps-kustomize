@@ -2,7 +2,8 @@
 
 A GitOps repository for running a **fleet of Kubernetes clusters from one hub**, in the same way
 OpenShift, Red Hat Advanced Cluster Management (RHACM) and OpenShift GitOps do it in production.
-The hub creates clusters from Git, registers them, and hands them over to their own Argo CD.
+The hub creates clusters from Git and registers them. Handing each cluster over to its own Argo CD
+is the next phase (see [Status](#status)).
 
 The repository runs as a **lab on a laptop** (k3d, no domain, no Red Hat subscription), using the
 open-source upstream of every product. Every pattern maps one-to-one to real OpenShift + RHACM.
@@ -100,8 +101,8 @@ configuration are kept apart:
 | What | Applied to | By |
 |---|---|---|
 | How the cluster is **created and registered** (`<hub>/managed-clusters/<cluster>/`) | The hub | The hub's Argo CD, through the ApplicationSet |
-| What **runs inside** the cluster (`overlays/<cluster>/`, `base` + patches) | The cluster itself | The cluster's own Argo CD |
-| **Shared credentials** for creating clusters (vCenter, pull secret) | The hub, into each cluster namespace that opts in by label | The hub's Argo CD, through a `ClusterExternalSecret` defined once per vCenter |
+| What **runs inside** the cluster (`overlays/<cluster>/`, `base` + patches) | The cluster itself | The cluster's own Argo CD (next phase) |
+| **Credentials** for creating clusters (vCenter, pull secret, install-config) | The hub, into the cluster's namespace | By hand for now, never in Git. Later from a secret store through External Secrets, with the same Secret names |
 
 **`base` is what every cluster must have, not a menu.** Optional apps live in
 `cluster/applications/`, and a cluster lists them in its own `kustomization.yaml`. If one cluster
@@ -134,7 +135,7 @@ When many clusters skip the same app, move it out of `base` instead.
 | `networkType: OVNKubernetes` in install-config | kindnet via `ClusterResourceSet` |
 | ACM import controller (built in) | OCM `ClusterImporter` feature gate |
 | `ManagedCluster` | `ManagedCluster` (same API) |
-| vCenter credentials and pull secret: `ClusterExternalSecret` per vCenter | Not needed yet: Docker needs no credentials |
+| vCenter credentials, pull secret and install-config: Secrets created by hand in the cluster namespace | Not needed: Docker needs no credentials |
 | Internal Git server | GitHub (public, so no environment data or secrets) |
 
 ## Safety rails
@@ -208,7 +209,7 @@ kubectl --kubeconfig /tmp/k3d-spoke-01.kubeconfig get nodes
 | Spoke provisioning from Git, CNI, auto-import into OCM | Done |
 | Argo CD + root app on the spoke, installed by the hub | Next |
 | Internal CA, Gateway API ingress, OpenBao + External Secrets | Planned |
-| Shared credentials for all clusters through a `ClusterExternalSecret` in the hub layer | Planned, together with External Secrets |
+| vCenter credentials and pull secret from the secret store, replacing the manual step | Planned, together with External Secrets |
 | Fleet governance with OCM policies | Planned |
 
 **Known lab limitations:**
