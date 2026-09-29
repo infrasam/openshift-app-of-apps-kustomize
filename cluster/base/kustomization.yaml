@@ -10,3 +10,4 @@ resources:
   - gateway-api.yaml
   - sail-operator.yaml
   - ingress.yaml
+  - argocd-route.yaml
