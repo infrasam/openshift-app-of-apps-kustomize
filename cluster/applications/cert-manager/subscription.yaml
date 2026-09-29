@@ -1,0 +1,19 @@
+# cert-manager via OLM, the same way OpenShift installs operators from OperatorHub.
+# Lab: upstream package from operatorhubio-catalog.
+# Production equivalent: openshift-cert-manager-operator, channel stable-v1,
+# source redhat-operators (or a mirrored catalog in a disconnected environment).
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cert-manager
+  # AllNamespaces-only operator: "operators" already has a global OperatorGroup
+  # (production: openshift-operators)
+  namespace: operators
+spec:
+  name: cert-manager
+  channel: stable
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: cert-manager.v1.16.5
+  # TODO(prod): Manual approval so upgrades are deliberate, not automatic
+  installPlanApproval: Automatic
