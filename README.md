@@ -7,7 +7,7 @@ is the next phase (see [Status](#status)).
 
 The repository runs as a **lab on a laptop** (k3d, no domain, no Red Hat subscription), using the
 open-source upstream of every product. Every pattern maps one-to-one to real OpenShift + RHACM.
-For a production installation, see
+To create child clusters in vCenter from Git with an existing RHACM hub (proof of concept), see
 [docs/openshift-implementation.md](docs/openshift-implementation.md).
 
 ## How it works
