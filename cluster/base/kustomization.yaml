@@ -6,3 +6,4 @@ resources:
   - olm.yaml
   - argocd.yaml
   - cert-manager.yaml
+  - lab-ca.yaml
