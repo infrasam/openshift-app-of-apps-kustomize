@@ -1,0 +1,19 @@
+# Sail Operator (upstream of OpenShift Service Mesh 3): runs Istio, which implements
+# Gateway API for ingress.
+# Production equivalent: servicemeshoperator3 from redhat-operators. On OpenShift 4.19+
+# the Ingress Operator installs it by itself when a GatewayClass is created.
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: sailoperator
+  # AllNamespaces-only operator (production: openshift-operators)
+  namespace: operators
+spec:
+  name: sailoperator
+  # Minor-pinned channel: moving to the next Istio minor is a deliberate change
+  channel: stable-1.30
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: sailoperator.v1.30.4
+  # TODO(prod): Manual approval so upgrades are deliberate, not automatic
+  installPlanApproval: Automatic

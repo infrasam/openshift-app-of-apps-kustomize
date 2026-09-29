@@ -7,3 +7,5 @@ resources:
   - argocd.yaml
   - cert-manager.yaml
   - lab-ca.yaml
+  - gateway-api.yaml
+  - sail-operator.yaml
