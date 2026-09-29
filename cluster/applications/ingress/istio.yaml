@@ -1,0 +1,36 @@
+# Istio control plane that only serves Gateway API ingress, configured like the one
+# OpenShift's Ingress Operator creates (Istio "openshift-gateway" in openshift-ingress).
+# That makes GatewayClass/Gateway/HTTPRoute manifests identical to production.
+apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: openshift-gateway
+spec:
+  namespace: openshift-ingress
+  # Pinned patch version (allowed values: kubectl explain istio.spec.version)
+  version: v1.30.4
+  values:
+    global:
+      istioNamespace: openshift-ingress
+    pilot:
+      # Lab: one small istiod instead of the default 2 GiB request
+      autoscaleEnabled: false
+      replicaCount: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+      env:
+        # Answer to OpenShift's controller and class names instead of Istio's own
+        PILOT_GATEWAY_API_CONTROLLER_NAME: openshift.io/gateway-controller/v1
+        PILOT_GATEWAY_API_DEFAULT_GATEWAYCLASS_NAME: openshift-default
+        # The GatewayClass comes from Git (gatewayclass.yaml), not from istiod
+        PILOT_ENABLE_GATEWAY_API_GATEWAYCLASS_CONTROLLER: "false"
+        # Istio creates the Deployment + Service for each Gateway by itself
+        PILOT_ENABLE_GATEWAY_API_DEPLOYMENT_CONTROLLER: "true"
+        PILOT_ENABLE_GATEWAY_API_STATUS: "true"
+        # Standard channel only, like OpenShift
+        PILOT_ENABLE_ALPHA_GATEWAY_API: "false"
+    # Ingress only, no service mesh: never inject sidecars into application pods
+    sidecarInjectorWebhook:
+      enableNamespacesByDefault: false

@@ -1,0 +1,6 @@
+# Same namespace as OpenShift's router and Gateway API gateways
+# (on OpenShift it already exists; in the lab we create it).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-ingress
