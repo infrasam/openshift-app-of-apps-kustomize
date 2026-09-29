@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - istio.yaml
+  - istio-revision-tag.yaml
   - gatewayclass.yaml
   - wildcard-certificate.yaml
   - gateway.yaml

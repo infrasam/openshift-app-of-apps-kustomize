@@ -15,7 +15,9 @@ spec:
       tls:
         mode: Terminate
         certificateRefs:
-          - kind: Secret
+          # group "" (core API) is set by the API server; written out so Argo CD sees no diff
+          - group: ""
+            kind: Secret
             name: apps-wildcard-tls
       allowedRoutes:
         namespaces:
