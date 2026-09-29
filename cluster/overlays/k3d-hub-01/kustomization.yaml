@@ -1,3 +1,5 @@
+# managed-clusters/ is deliberately NOT listed: spoke-provisioning.yaml gives each
+# cluster its own Application (and the infra project may only create Applications).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

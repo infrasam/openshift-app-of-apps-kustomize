@@ -1,5 +1,5 @@
 # LAB ONLY: Cluster API, a stand-in for Hive (which ships with ACM/MCE in production).
-# Creates the spoke clusters defined in cluster/overlays/<spoke>/provisioning/;
+# Creates the spoke clusters defined in cluster/overlays/k3d-hub-01/managed-clusters/;
 # the Docker provider runs "machines" as containers.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

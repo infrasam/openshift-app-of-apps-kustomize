@@ -1,5 +1,6 @@
-# Hub-only: one Application per cluster/overlays/<cluster>/provisioning folder.
+# Hub-only: one Application per folder in this hub's managed-clusters/ inventory.
 # New cluster = new folder in a PR; nothing on the hub needs to change.
+# Scoped to THIS hub's folder, so a second hub never picks up clusters it does not own.
 # Production equivalent: ApplicationSet on the ACM hub applying Hive/ClusterInstance objects.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -18,11 +19,11 @@ spec:
         repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
         revision: main
         directories:
-          - path: cluster/overlays/*/provisioning
+          - path: cluster/overlays/k3d-hub-01/managed-clusters/*
   template:
     metadata:
-      # cluster/overlays/k3d-spoke-01/provisioning -> segment 2 = k3d-spoke-01
-      name: '{{ index .path.segments 2 }}-provisioning'
+      # The folder name is the cluster name: managed-clusters/k3d-spoke-01 -> k3d-spoke-01
+      name: '{{ .path.basename }}-provisioning'
     spec:
       project: default
       source:

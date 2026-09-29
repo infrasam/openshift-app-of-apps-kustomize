@@ -71,43 +71,45 @@ cluster/
 │       ├── kustomization.yaml
 │       └── img4.19.10-x86-64.yaml
 └── overlays/
-    ├── <hub>/
-    │   ├── kustomization.yaml           # ../../base + the Applications below
-    │   ├── rhacm.yaml                   # 5  Application
-    │   ├── cluster-credentials.yaml     # 7  Application
-    │   ├── cluster-imagesets.yaml       # 8.3 Application
-    │   ├── spoke-provisioning.yaml      # 6  ApplicationSet
-    │   └── helm/
-    │       ├── bootstrap/               # 3.2 installed once with helm
-    │       │   ├── Chart.yaml
-    │       │   ├── values.yaml
-    │       │   └── templates/
-    │       │       ├── clusterrolebinding.yaml
-    │       │       ├── appproject.yaml
-    │       │       ├── application.yaml
-    │       │       └── argocd-tls-certs.yaml
-    │       └── infra/                   # 4  creates the infra Application
-    │           ├── Chart.yaml
-    │           ├── values.yaml
-    │           └── templates/application.yaml
-    └── ocp-prod-01/
-        └── provisioning/                # 8  applied to the HUB: how the spoke is created
-            ├── kustomization.yaml
-            ├── namespace.yaml
-            ├── install-config-externalsecret.yaml
-            ├── clusterdeployment.yaml
-            ├── machinepool.yaml
-            └── managedcluster.yaml
+    └── <hub>/
+        ├── kustomization.yaml           # ../../base + the Applications below
+        ├── rhacm.yaml                   # 5  Application
+        ├── cluster-credentials.yaml     # 7  Application
+        ├── cluster-imagesets.yaml       # 8.3 Application
+        ├── spoke-provisioning.yaml      # 6  ApplicationSet over managed-clusters/*
+        ├── managed-clusters/            # 8  applied to the HUB: the clusters this hub owns
+        │   └── ocp-prod-01/             #    how the spoke is created and registered
+        │       ├── kustomization.yaml
+        │       ├── namespace.yaml
+        │       ├── install-config-externalsecret.yaml
+        │       ├── clusterdeployment.yaml
+        │       ├── machinepool.yaml
+        │       └── managedcluster.yaml
+        └── helm/
+            ├── bootstrap/               # 3.2 installed once with helm
+            │   ├── Chart.yaml
+            │   ├── values.yaml
+            │   └── templates/
+            │       ├── clusterrolebinding.yaml
+            │       ├── appproject.yaml
+            │       ├── application.yaml
+            │       └── argocd-tls-certs.yaml
+            └── infra/                   # 4  creates the infra Application
+                ├── Chart.yaml
+                ├── values.yaml
+                └── templates/application.yaml
 ```
 
-The spoke's own `kustomization.yaml` (what runs **on** the spoke) comes with the next phase, see
-step 11.
+How a spoke is created is applied to the hub, so it lives in the hub's `managed-clusters/`
+inventory. The spoke's own overlay, `cluster/overlays/<spoke>/`, holds what runs **on** the spoke.
+It comes with the next phase, see step 11. Each hub reads only its own inventory, so a second hub
+(for example one for non-production) never picks up clusters it does not own.
 
 Protect `main` before the first cluster depends on it:
 
 - Require a pull request before merging, and do not allow anyone to bypass it.
-- Require at least one approval for anything under `*/provisioning/`. A merge there creates, or
-  changes, a whole cluster.
+- Require at least one approval for anything under `cluster/overlays/<hub>/managed-clusters/`
+  (for example with a `CODEOWNERS` entry). A merge there creates, or changes, a whole cluster.
 - Run `kustomize build` on every overlay in CI. A folder that does not render stops Argo CD from
   syncing everything in it.
 
@@ -336,8 +338,9 @@ oc get managedclusters                                 # local-cluster (the hub 
 ```
 
 **6.2 Add the ApplicationSet** to the hub overlay (`cluster/overlays/<hub>/spoke-provisioning.yaml`).
-It creates one Application per `cluster/overlays/*/provisioning` folder. A new cluster is a new
-folder in a pull request, and nothing on the hub has to change.
+It creates one Application per folder in the hub's `managed-clusters/` inventory. A new cluster
+is a new folder in a pull request, and nothing on the hub has to change. The hub's own
+`kustomization.yaml` does not list `managed-clusters/`: each cluster gets its own Application.
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -355,10 +358,11 @@ spec:
         repoURL: https://git.example.internal/platform/fleet.git
         revision: main
         directories:
-          - path: cluster/overlays/*/provisioning
+          - path: cluster/overlays/<hub>/managed-clusters/*
   template:
     metadata:
-      name: '{{ index .path.segments 2 }}-provisioning'
+      # The folder name is the cluster name
+      name: '{{ .path.basename }}-provisioning'
     spec:
       project: default
       source:
@@ -482,9 +486,10 @@ before you plan a rotation.
 
 ## 8. Define a spoke cluster
 
-Everything below goes in `cluster/overlays/<spoke>/provisioning/`, with a `kustomization.yaml`
-listing each file. The examples use the spoke name `ocp-prod-01`. The **namespace name must equal
-the cluster name**, which is an RHACM convention.
+Everything below goes in `cluster/overlays/<hub>/managed-clusters/<spoke>/`, with a
+`kustomization.yaml` listing each file. The examples use the spoke name `ocp-prod-01`. The
+**folder name, the namespace name and the cluster name must be the same**. The namespace rule is
+an RHACM convention, and the ApplicationSet names each Application after the folder.
 
 **8.1 `namespace.yaml`**: the labels opt the namespace in to the shared credentials from step 7.
 
@@ -705,7 +710,7 @@ resources:
 Render it before you commit:
 
 ```bash
-kustomize build cluster/overlays/ocp-prod-01/provisioning
+kustomize build cluster/overlays/<hub>/managed-clusters/ocp-prod-01
 ```
 
 ## 9. Verify
@@ -739,8 +744,9 @@ oc -n ocp-prod-01 get clusterdeployment ocp-prod-01 \
 | `installPlanApproval: Manual` on every Subscription | `cluster/applications/*/subscription.yaml` |
 | Pinned channels, chart versions and release images | Everywhere |
 | `preserveResourcesOnDeletion` on the ApplicationSet, and no finalizer in its template | `spoke-provisioning.yaml` |
-| `Prune=false,Delete=false` on `ClusterDeployment` and `ManagedCluster` | `provisioning/` |
-| `preserveOnDelete: true` on `ClusterDeployment` | `provisioning/clusterdeployment.yaml` |
+| `Prune=false,Delete=false` on `ClusterDeployment` and `ManagedCluster` | `managed-clusters/<spoke>/` |
+| `preserveOnDelete: true` on `ClusterDeployment` | `managed-clusters/<spoke>/clusterdeployment.yaml` |
+| Review required for the hub's cluster inventory | `CODEOWNERS` on `cluster/overlays/<hub>/managed-clusters/` |
 | AppProject limits set by Helm, not by Git | Bootstrap chart |
 | No credentials, kubeconfigs or keys in Git, only `ExternalSecret` references | Everywhere |
 | Shared credentials (vCenter, pull secret) defined once per vCenter in the hub layer; cluster namespaces opt in by label | `cluster/applications/cluster-credentials/` |

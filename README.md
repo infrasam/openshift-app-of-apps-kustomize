@@ -15,7 +15,7 @@ For a production installation, see
 flowchart LR
     git[(Git repo)] -->|root app| hubargo[Hub Argo CD]
     hubargo --> hubapps[Hub platform<br/>OLM, cert-manager,<br/>OCM hub, Cluster API]
-    hubargo -->|ApplicationSet<br/>per provisioning/ folder| prov[Spoke provisioning<br/>Cluster + CNI +<br/>ManagedCluster]
+    hubargo -->|ApplicationSet<br/>per managed-clusters/ folder| prov[Spoke provisioning<br/>Cluster + CNI +<br/>ManagedCluster]
     prov -->|Cluster API| spoke[Spoke cluster]
     prov -->|auto-import| ocm[OCM hub]
     ocm -->|klusterlet| spoke
@@ -27,9 +27,10 @@ flowchart LR
 2. **App of apps.** `root` renders `helm/infra`, which creates the `infra` Application. `infra`
    points to the cluster's Kustomize overlay, and every entry in the overlay is itself an Argo CD
    Application. Sync waves order them.
-3. **A new cluster is a new folder.** An ApplicationSet on the hub turns every
-   `cluster/overlays/<cluster>/provisioning/` folder into an Application. That Application creates
-   the cluster, installs its network, and registers it in Open Cluster Management (OCM).
+3. **A new cluster is a new folder.** An ApplicationSet on the hub turns every folder in the
+   hub's inventory, `cluster/overlays/<hub>/managed-clusters/<cluster>/`, into an Application. That
+   Application creates the cluster, installs its network, and registers it in Open Cluster
+   Management (OCM).
 4. **Zero-touch join.** OCM imports the new cluster automatically, and it reports as
    `JOINED` / `AVAILABLE` on the hub.
 
@@ -51,51 +52,55 @@ cluster/
 │       ├── clustermanager.yaml
 │       └── bootstrap-sa.yaml
 └── overlays/
-    ├── k3d-hub-01/                        # the hub
-    │   ├── k3d-cluster.yaml               # how the hub itself is created
-    │   ├── kustomization.yaml             # ../../base + the files below
-    │   ├── ocm-hub.yaml                   # Application: OCM hub
-    │   ├── capi.yaml                      # Application: Cluster API (= Hive)
-    │   ├── spoke-provisioning.yaml        # ApplicationSet over */provisioning
-    │   ├── patch/argocd-patch.yaml
-    │   └── helm/
-    │       ├── bootstrap/                 # installed once with helm
-    │       │   ├── Chart.yaml
-    │       │   ├── values.yaml
-    │       │   └── templates/
-    │       │       ├── namespace.yaml
-    │       │       ├── clusterrolebinding.yaml
-    │       │       ├── appproject.yaml
-    │       │       ├── application.yaml   # the root Application
-    │       │       ├── argocd-tls-certs.yaml
-    │       │       └── cluster-info.yaml
-    │       └── infra/                     # creates the infra Application
-    │           ├── Chart.yaml
-    │           ├── values.yaml
-    │           └── templates/application.yaml
-    └── k3d-spoke-01/                      # a spoke
-        └── provisioning/                  # applied to the HUB: how this cluster is created
-            ├── kustomization.yaml
-            ├── namespace.yaml
-            ├── cluster.yaml               # Cluster API Cluster (= Hive ClusterDeployment)
-            ├── controlplane.yaml          # (= install-config / MachinePool)
-            ├── cni.yaml
-            ├── cni/kindnet.yaml           # pod network (= networkType in install-config)
-            ├── managedcluster.yaml        # identical API in RHACM
-            └── import-rbac.yaml
+    └── k3d-hub-01/                        # the hub
+        ├── k3d-cluster.yaml               # how the hub itself is created
+        ├── kustomization.yaml             # ../../base + the files below
+        ├── ocm-hub.yaml                   # Application: OCM hub
+        ├── capi.yaml                      # Application: Cluster API (= Hive)
+        ├── spoke-provisioning.yaml        # ApplicationSet over managed-clusters/*
+        ├── patch/argocd-patch.yaml
+        ├── managed-clusters/              # applied to the HUB: the clusters this hub owns
+        │   └── k3d-spoke-01/              # how this spoke is created and registered
+        │       ├── kustomization.yaml
+        │       ├── namespace.yaml
+        │       ├── cluster.yaml           # Cluster API Cluster (= Hive ClusterDeployment)
+        │       ├── controlplane.yaml      # (= install-config / MachinePool)
+        │       ├── cni.yaml
+        │       ├── cni/kindnet.yaml       # pod network (= networkType in install-config)
+        │       ├── managedcluster.yaml    # identical API in RHACM
+        │       └── import-rbac.yaml
+        └── helm/
+            ├── bootstrap/                 # installed once with helm
+            │   ├── Chart.yaml
+            │   ├── values.yaml
+            │   └── templates/
+            │       ├── namespace.yaml
+            │       ├── clusterrolebinding.yaml
+            │       ├── appproject.yaml
+            │       ├── application.yaml   # the root Application
+            │       ├── argocd-tls-certs.yaml
+            │       └── cluster-info.yaml
+            └── infra/                     # creates the infra Application
+                ├── Chart.yaml
+                ├── values.yaml
+                └── templates/application.yaml
 docs/
 └── openshift-implementation.md
 scripts/
 └── bootstrap.sh
 ```
 
-**One cluster, one folder.** Everything about a cluster lives in its overlay. Three kinds of
+**A folder belongs to the cluster it is applied to.** How a spoke is created is applied to the
+hub, so it lives in the hub's `managed-clusters/` inventory. What runs on the spoke will live in
+the spoke's own overlay, `cluster/overlays/<cluster>/`, from the next phase (see Status). The
+hub's ApplicationSet only reads its own inventory, so a second hub never picks up clusters it does
+not own, and `managed-clusters/` is the one path to protect with review. Three kinds of
 configuration are kept apart:
 
 | What | Applied to | By |
 |---|---|---|
-| How the cluster is **created and registered** (`provisioning/`) | The hub | The hub's Argo CD, through the ApplicationSet |
-| What **runs inside** the cluster (`kustomization.yaml`, `base` + patches) | The cluster itself | The cluster's own Argo CD |
+| How the cluster is **created and registered** (`<hub>/managed-clusters/<cluster>/`) | The hub | The hub's Argo CD, through the ApplicationSet |
+| What **runs inside** the cluster (`overlays/<cluster>/`, `base` + patches) | The cluster itself | The cluster's own Argo CD |
 | **Shared credentials** for creating clusters (vCenter, pull secret) | The hub, into each cluster namespace that opts in by label | The hub's Argo CD, through a `ClusterExternalSecret` defined once per vCenter |
 
 **`base` is what every cluster must have, not a menu.** Optional apps live in
