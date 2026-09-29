@@ -1,0 +1,29 @@
+# LAB ONLY: Gateway API CRDs (standard channel).
+# On OpenShift 4.19+ the Ingress Operator installs and owns these CRDs and blocks anyone
+# else from changing them: do not carry this file to production.
+# Version must match the Istio minor (Istio 1.30 -> Gateway API v1.5.1).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway-api
+  namespace: openshift-gitops
+  annotations:
+    # Before the Sail Operator (-1): Istio needs the CRDs when it starts
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kubernetes-sigs/gateway-api.git
+    targetRevision: v1.5.1
+    # Standard channel only, like OpenShift (experimental lives in config/crd/experimental)
+    path: config/crd
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      # Never prune CRDs: deleting one deletes every Gateway/HTTPRoute in the cluster
+      prune: false
+      selfHeal: true
+    syncOptions:
+      # CRDs are too large for client-side apply's last-applied annotation
+      - ServerSideApply=true

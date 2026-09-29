@@ -1,0 +1,24 @@
+# Istio operator on every cluster (the ingress implementation). See applications/sail-operator/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sail-operator
+  namespace: openshift-gitops
+  annotations:
+    # After the Gateway API CRDs (-2), before the Istio control plane and Gateway (0)
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/sail-operator
+  destination:
+    # The Subscription sets its own namespace (operators)
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
