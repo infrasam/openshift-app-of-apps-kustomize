@@ -1,0 +1,8 @@
+# Same GatewayClass as on OpenShift 4.19+: served by the Istio control plane in istio.yaml
+# (production: the Ingress Operator reacts to this object and sets up Istio by itself).
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: openshift-default
+spec:
+  controllerName: openshift.io/gateway-controller/v1

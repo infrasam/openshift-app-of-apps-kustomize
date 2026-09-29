@@ -1,0 +1,21 @@
+# Wildcard certificate for all apps on this cluster, issued by the internal CA.
+# Production: *.apps.<cluster>.<domain> from the ADCS / Vault PKI issuer.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apps-wildcard
+  # The Gateway reads its certificate from its own namespace
+  namespace: openshift-ingress
+spec:
+  secretName: apps-wildcard-tls
+  dnsNames:
+    - "*.apps.hub.127.0.0.1.nip.io"
+  duration: 2160h      # 90 days
+  renewBefore: 720h    # renew 30 days before expiry
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lab-ca
