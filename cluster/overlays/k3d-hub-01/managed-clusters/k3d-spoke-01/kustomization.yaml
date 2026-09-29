@@ -1,5 +1,5 @@
-# Applied to the HUB: how k3d-spoke-01 is created.
-# Not referenced by the spoke's own kustomization.yaml.
+# Applied to the HUB: how k3d-spoke-01 is created and registered.
+# Rendered by the spoke-provisioning ApplicationSet, not by the hub's own kustomization.yaml.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
