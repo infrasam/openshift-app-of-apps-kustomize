@@ -1,0 +1,19 @@
+# OpenBao UI and API through the Gateway, TLS passthrough: traffic stays encrypted
+# until OpenBao itself (certificate from certificate.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: openbao
+  namespace: openbao
+spec:
+  parentRefs:
+    - name: apps
+      namespace: openshift-ingress
+      sectionName: tls-passthrough-openbao
+  hostnames:
+    - openbao.apps.hub.127.0.0.1.nip.io
+  rules:
+    - backendRefs:
+        # Always the Raft leader, which serves both the API and the UI
+        - name: openbao-active
+          port: 8200
