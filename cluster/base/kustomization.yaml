@@ -9,5 +9,6 @@ resources:
   - lab-ca.yaml
   - gateway-api.yaml
   - sail-operator.yaml
+  - external-secrets.yaml
   - ingress.yaml
   - argocd-route.yaml
