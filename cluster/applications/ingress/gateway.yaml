@@ -22,7 +22,21 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    # Plain HTTP only exists to redirect to HTTPS (see http-redirect.yaml, later)
+    # TLS passthrough: the backend terminates TLS with its own certificate
+    # (OpenShift: a Route with termination: passthrough). The exact hostname wins
+    # over the wildcard above on the same port.
+    - name: tls-passthrough-openbao
+      protocol: TLS
+      port: 443
+      hostname: openbao.apps.hub.127.0.0.1.nip.io
+      tls:
+        mode: Passthrough
+      allowedRoutes:
+        namespaces:
+          from: All
+        kinds:
+          - kind: TLSRoute
+    # Plain HTTP only exists to redirect to HTTPS (see http-redirect.yaml)
     - name: http
       protocol: HTTP
       port: 80
