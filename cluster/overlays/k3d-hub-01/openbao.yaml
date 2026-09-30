@@ -1,0 +1,36 @@
+# Hub-only: OpenBao, the one secret store for the whole fleet (production: the corporate Vault).
+# Two sources: the upstream chart, and this repo for its values and extra manifests.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: openshift-gitops
+  annotations:
+    # After lab-ca (-2) and ingress (0)
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  sources:
+    - repoURL: https://openbao.github.io/openbao-helm
+      chart: openbao
+      targetRevision: 0.30.0
+      helm:
+        releaseName: openbao
+        valueFiles:
+          - $values/cluster/applications/openbao/values.yaml
+    # Provides $values, and renders certificate.yaml through its kustomization.yaml
+    - repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+      targetRevision: main
+      path: cluster/applications/openbao
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  syncPolicy:
+    automated:
+      # Never prune anything of the secret store automatically
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

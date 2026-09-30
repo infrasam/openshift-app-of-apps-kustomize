@@ -1,0 +1,67 @@
+# Helm values for the OpenBao chart (referenced as $values from overlays/k3d-hub-01/openbao.yaml).
+# Production equivalent: HashiCorp Vault / OpenBao with integrated storage (Raft), TLS from the
+# corporate CA, 3 or 5 replicas and auto-unseal through an HSM or KMS.
+global:
+  tlsDisable: false
+
+# Secrets reach workloads through the External Secrets Operator, not through sidecars
+injector:
+  enabled: false
+
+server:
+  # Lab: small footprint
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  # "Ready" also while sealed or uninitialized: unsealing is a manual step, and
+  # Argo CD must never wait on it (it would block every later sync wave)
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+
+  # Certificate from lab-ca (certificate.yaml), mounted where OpenBao reads it
+  volumes:
+    - name: openbao-tls
+      secret:
+        secretName: openbao-tls
+  volumeMounts:
+    - name: openbao-tls
+      mountPath: /openbao/userconfig/openbao-tls
+      readOnly: true
+  extraEnvironmentVars:
+    # Lets the bao CLI inside the pod trust the server certificate
+    BAO_CACERT: /openbao/userconfig/openbao-tls/ca.crt
+
+  dataStorage:
+    enabled: true
+    size: 1Gi
+
+  # Integrated storage (Raft), like production. Lab: 1 replica instead of 3 or 5.
+  ha:
+    enabled: true
+    replicas: 1
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+
+        listener "tcp" {
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_cert_file   = "/openbao/userconfig/openbao-tls/tls.crt"
+          tls_key_file    = "/openbao/userconfig/openbao-tls/tls.key"
+        }
+
+        storage "raft" {
+          path = "/openbao/data"
+        }
+
+        service_registration "kubernetes" {}
+
+ui:
+  enabled: true
