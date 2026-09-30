@@ -7,3 +7,4 @@ resources:
   - ocm-hub.yaml
   - capi.yaml
   - spoke-provisioning.yaml
+  - openbao.yaml

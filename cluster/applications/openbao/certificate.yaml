@@ -1,0 +1,33 @@
+# TLS for the OpenBao API and UI, issued by the internal CA.
+# Production: a certificate from the corporate CA (ADCS / Vault PKI).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-tls
+  namespace: openbao
+spec:
+  secretName: openbao-tls
+  dnsNames:
+    # Services created by the chart (release name "openbao")
+    - openbao
+    - openbao.openbao.svc
+    - openbao.openbao.svc.cluster.local
+    - openbao-active.openbao.svc
+    - openbao-active.openbao.svc.cluster.local
+    # Raft peers talk to each other through the headless service
+    - "*.openbao-internal"
+    - "*.openbao-internal.openbao.svc.cluster.local"
+    # UI through the Gateway (step 4.4)
+    - openbao.apps.hub.127.0.0.1.nip.io
+  ipAddresses:
+    # The bao CLI inside the pod talks to https://127.0.0.1:8200
+    - 127.0.0.1
+  duration: 2160h      # 90 days
+  renewBefore: 720h    # renew 30 days before expiry
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lab-ca
