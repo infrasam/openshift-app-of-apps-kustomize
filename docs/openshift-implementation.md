@@ -677,7 +677,8 @@ After the proof of concept, in this order:
   is the lab's next phase.
 - **Secrets from a secret store** (OpenBao or Vault, plus the External Secrets Operator). This
   replaces step 6: `ExternalSecret` objects create the same four Secrets with the same names, so
-  `clusterdeployment.yaml` does not change.
+  `clusterdeployment.yaml` does not change. See
+  [openshift-secrets-openbao-eso.md](openshift-secrets-openbao-eso.md), section 11.
 - **The hub's own configuration in Git.** What is applied by hand in this guide
   (`gitops-provisioning-rbac.yaml`, `spoke-provisioning.yaml`, ClusterImageSets) moves into the
   lab's app-of-apps pattern: a bootstrap Helm chart with the `root` Application, and the hub
