@@ -8,5 +8,4 @@ resources:
   - capi.yaml
   - spoke-provisioning.yaml
   - openbao.yaml
-  - secret-store.yaml
   - secret-demo.yaml

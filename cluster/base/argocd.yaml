@@ -38,9 +38,11 @@ spec:
             defaultPolicy: role:readonly
             policy: ""
             scopes: "[groups]"
-          # Diff on the API server (like kubectl diff): defaulted fields no longer show as OutOfSync
-          cmdParams:
-            controller.diff.server.side: "true"
+          # Diff on the API server (like kubectl diff): defaulted fields no longer show as OutOfSync.
+          # A controller flag: the operator-managed controller does not read argocd-cmd-params-cm.
+          controller:
+            extraCommandArgs:
+              - --server-side-diff-enabled
           server:
             route:
               enabled: false   # Route CRD does not exist on k3d
