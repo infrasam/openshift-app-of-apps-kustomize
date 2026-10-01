@@ -1,0 +1,14 @@
+# Wrapper chart: the upstream OpenBao chart (dependency) plus our own templates/:
+# the TLS certificate, the UI route and the ESO connection (ServiceAccount + ClusterSecretStore).
+# Everything about the secret store is released and versioned together.
+# Production: the same layout, with the dependency from the internal chart repository
+# (docs/openshift-secrets-openbao-eso.md).
+apiVersion: v2
+name: openbao
+description: OpenBao for the fleet, plus the ESO connection (ClusterSecretStore) to it
+type: application
+version: 1.0.0
+dependencies:
+  - name: openbao
+    version: 0.30.0
+    repository: https://openbao.github.io/openbao-helm

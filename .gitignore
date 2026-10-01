@@ -14,6 +14,9 @@ kubeconfig
 # Exported lab root CA: regenerated for every new cluster, not source of truth
 lab-ca.crt
 
+# Helm chart dependencies: downloaded by helm/Argo CD, pinned in Chart.lock
+cluster/applications/*/charts/
+
 # Editor and OS noise
 .vscode/
 .idea/
