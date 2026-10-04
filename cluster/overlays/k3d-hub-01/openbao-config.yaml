@@ -1,0 +1,25 @@
+# Hub-only: everything around OpenBao, as plain YAML: namespace, TLS certificate, UI route,
+# the ServiceAccounts that log in, and the ESO connection (ClusterSecretStore).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao-config
+  namespace: openshift-gitops
+  annotations:
+    # Before openbao (1): the namespace and the certificate must exist when OpenBao starts
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/openbao-config
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      # Never prune anything of the secret store automatically
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

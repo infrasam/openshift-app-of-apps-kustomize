@@ -1,0 +1,6 @@
+# OpenBao's namespace. Created here (wave 0), so the certificate and the hand-made unseal-key
+# Secret can exist before OpenBao itself starts (wave 1).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openbao

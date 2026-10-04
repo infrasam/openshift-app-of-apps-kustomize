@@ -1,22 +1,190 @@
-# Hub-only: OpenBao, the one secret store for the whole fleet (production: the corporate Vault),
-# and the ESO connection to it. Chart: cluster/applications/openbao (wrapper around the
-# upstream openbao chart; Argo CD downloads the dependency when it renders).
+# Hub-only: OpenBao, the one secret store for the whole fleet (production: the corporate Vault).
+# The upstream Helm chart, with all its settings right here under helm.valuesObject.
+# Its certificate, route and the ESO connection are plain YAML in openbao-config.yaml.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: openbao
   namespace: openshift-gitops
   annotations:
-    # After lab-ca (-2), external-secrets (-1) and ingress (0)
+    # After openbao-config (0): the namespace and the TLS certificate must exist first
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
   source:
-    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
-    targetRevision: main
-    path: cluster/applications/openbao
+    repoURL: https://openbao.github.io/openbao-helm
+    chart: openbao
+    targetRevision: 0.30.0
     helm:
       releaseName: openbao
+      valuesObject:
+        global:
+          tlsDisable: false
+
+        # Secrets reach workloads through the External Secrets Operator, not through sidecars
+        injector:
+          enabled: false
+
+        server:
+          # Lab: small footprint
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+          # "Ready" also while sealed or uninitialized, so Argo CD never waits on OpenBao's state
+          readinessProbe:
+            enabled: true
+            path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+
+          volumes:
+            # Certificate from lab-ca (openbao-config/certificate.yaml)
+            - name: openbao-tls
+              secret:
+                secretName: openbao-tls
+            # Unseal key, created once by hand (never in Git)
+            - name: openbao-unseal-key
+              secret:
+                secretName: openbao-unseal-key
+          volumeMounts:
+            - name: openbao-tls
+              mountPath: /openbao/userconfig/openbao-tls
+              readOnly: true
+            - name: openbao-unseal-key
+              mountPath: /openbao/unseal
+              readOnly: true
+          extraEnvironmentVars:
+            # Lets the bao CLI inside the pod trust the server certificate
+            BAO_CACERT: /openbao/userconfig/openbao-tls/ca.crt
+
+          dataStorage:
+            enabled: true
+            size: 1Gi
+
+          # Integrated storage (Raft), like production. Lab: 1 replica instead of 3 or 5.
+          ha:
+            enabled: true
+            replicas: 1
+            raft:
+              enabled: true
+              setNodeId: true
+              config: |
+                ui = true
+
+                listener "tcp" {
+                  address         = "[::]:8200"
+                  cluster_address = "[::]:8201"
+                  tls_cert_file   = "/openbao/userconfig/openbao-tls/tls.crt"
+                  tls_key_file    = "/openbao/userconfig/openbao-tls/tls.key"
+                }
+
+                storage "raft" {
+                  path = "/openbao/data"
+                }
+
+                service_registration "kubernetes" {}
+
+                # Unlock automatically with the key from the Secret openbao-unseal-key.
+                # Lab: a static key. Production: an HSM (seal "pkcs11") or another Vault (seal "transit").
+                seal "static" {
+                  current_key_id = "lab-1"
+                  current_key    = "file:///openbao/unseal/unseal.key"
+                }
+
+                # Every request is logged to the pod's output
+                audit "file" "stdout" {
+                  options {
+                    file_path = "stdout"
+                  }
+                }
+
+                # -------------------------------------------------------------------------
+                # Self-initialization: runs ONCE, on the very first start of an empty OpenBao.
+                # The root token it uses is revoked afterwards; nobody ever sees it.
+                # -------------------------------------------------------------------------
+
+                # Key/value secrets, version 2, at secret/
+                initialize "secrets" {
+                  request "kv" {
+                    operation = "update"
+                    path      = "sys/mounts/secret"
+                    data = {
+                      type    = "kv"
+                      options = { version = "2" }
+                    }
+                  }
+                }
+
+                # Kubernetes auth: ServiceAccount tokens from this cluster log in
+                initialize "auth" {
+                  request "enable-kubernetes" {
+                    operation = "update"
+                    path      = "sys/auth/kubernetes"
+                    data      = { type = "kubernetes" }
+                  }
+                  request "config-kubernetes" {
+                    operation = "update"
+                    path      = "auth/kubernetes/config"
+                    data      = { kubernetes_host = "https://kubernetes.default.svc" }
+                  }
+                }
+
+                initialize "policies" {
+                  # ESO on the hub: read-only, shared secrets and the hub's own path
+                  request "eso" {
+                    operation = "update"
+                    path      = "sys/policies/acl/eso-k3d-hub-01"
+                    data = {
+                      policy = <<-EOT
+                        path "secret/data/shared/*"                  { capabilities = ["read"] }
+                        path "secret/metadata/shared/*"              { capabilities = ["read", "list"] }
+                        path "secret/data/clusters/k3d-hub-01/*"     { capabilities = ["read"] }
+                        path "secret/metadata/clusters/k3d-hub-01/*" { capabilities = ["read", "list"] }
+                      EOT
+                    }
+                  }
+                  # Administrators
+                  request "admin" {
+                    operation = "update"
+                    path      = "sys/policies/acl/admin"
+                    data = {
+                      policy = <<-EOT
+                        path "*" { capabilities = ["create", "read", "update", "patch", "delete", "list", "sudo"] }
+                      EOT
+                    }
+                  }
+                }
+
+                initialize "roles" {
+                  # ESO logs in with openbao-config/serviceaccount.yaml
+                  request "eso" {
+                    operation = "update"
+                    path      = "auth/kubernetes/role/eso-k3d-hub-01"
+                    data = {
+                      bound_service_account_names      = ["openbao-auth"]
+                      bound_service_account_namespaces = ["external-secrets"]
+                      token_policies                   = ["eso-k3d-hub-01"]
+                      token_ttl                        = "1h"
+                    }
+                  }
+                  # Humans log in with a token for openbao-config/serviceaccount-admin.yaml.
+                  # Who may create that token is decided by Kubernetes RBAC (production: OIDC).
+                  request "admin" {
+                    operation = "update"
+                    path      = "auth/kubernetes/role/admin"
+                    data = {
+                      bound_service_account_names      = ["openbao-admin"]
+                      bound_service_account_namespaces = ["openbao"]
+                      token_policies                   = ["admin"]
+                      token_ttl                        = "1h"
+                    }
+                  }
+                }
+
+        ui:
+          enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: openbao
@@ -26,5 +194,4 @@ spec:
       prune: false
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
       - ServerSideApply=true
