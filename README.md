@@ -62,12 +62,13 @@ cluster/
 │   ├── ingress/                           # Istio, GatewayClass, Gateway, wildcard cert, redirect
 │   ├── argocd-route/                      # HTTPRoute
 │   ├── ocm-hub/                           # OCM hub via OLM (= RHACM)
-│   ├── openbao-config/                    # everything around OpenBao, plain YAML
+│   ├── openbao-config/                    # what OpenBao needs before it starts
 │   │   ├── namespace.yaml
 │   │   ├── certificate.yaml               # TLS from lab-ca
 │   │   ├── tlsroute.yaml                  # UI through the Gateway (TLS passthrough)
+│   │   └── serviceaccount-admin.yaml      # identity administrators log in with
+│   ├── secret-store/                      # the ESO connection, after OpenBao runs
 │   │   ├── serviceaccount.yaml            # identity ESO logs in with
-│   │   ├── serviceaccount-admin.yaml      # identity administrators log in with
 │   │   └── clustersecretstore.yaml        # ESO -> OpenBao
 │   └── secret-demo/                       # ExternalSecret demo
 └── overlays/
@@ -78,6 +79,7 @@ cluster/
         ├── capi.yaml                      # 1  Application: Cluster API (= Hive)
         ├── openbao-config.yaml            # 0  Application: applications/openbao-config/
         ├── openbao.yaml                   # 1  Application: OpenBao Helm chart, settings inline
+        ├── secret-store.yaml              # 2  Application: applications/secret-store/
         ├── spoke-provisioning.yaml        # 2  ApplicationSet over managed-clusters/*
         ├── secret-demo.yaml               # 3  Application: ESO demo
         ├── patch/argocd-patch.yaml
@@ -106,7 +108,10 @@ scripts/
 *that* it is installed on a cluster (and in which wave) is an Argo CD Application in `base/`
 (every cluster) or in the cluster's overlay (only that cluster). OpenBao is hub-only: there is
 one secret store for the whole fleet. OpenBao itself is the upstream Helm chart with its
-settings inline in `openbao.yaml`; everything around it is plain YAML in `openbao-config/`.
+settings inline in `openbao.yaml`. What it needs before it starts is plain YAML in
+`openbao-config/` (wave 0), and the ESO connection that needs it running is in `secret-store/`
+(wave 2). A sync wave only starts when everything before it is healthy, so each part must come
+after what it depends on.
 
 **A folder belongs to the cluster it is applied to.** How a spoke is created is applied to the
 hub, so it lives in the hub's `managed-clusters/` inventory. What runs on the spoke will live in
