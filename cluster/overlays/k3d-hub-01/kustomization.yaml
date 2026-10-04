@@ -10,4 +10,5 @@ resources:
   - openbao-config.yaml
   - openbao.yaml
   - secret-store.yaml
+  - cluster-credentials.yaml
   - secret-demo.yaml
