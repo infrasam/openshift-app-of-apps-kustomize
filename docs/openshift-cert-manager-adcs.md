@@ -36,6 +36,19 @@ flowchart LR
 
 The private key is created inside the cluster and never leaves it. ADCS only sees the request.
 
+### How the files fit together
+
+Each part is its own Argo CD Application: one small file in `cluster/base/` (every cluster gets
+it) that points at a folder or a Helm chart. The **sync wave** decides the order. Argo CD only
+starts a wave when everything in the waves before it is healthy.
+
+| Wave | Application file | Points at | Step |
+|---|---|---|---|
+| -3 | `cluster/base/cert-manager.yaml` | `applications/cert-manager/` (the operator) | 2 |
+| -2 | `cluster/base/adcs-issuer.yaml` | The ADCS issuer Helm chart, settings written in the file | 3 |
+| -1 | `cluster/base/adcs-issuer-config.yaml` | `applications/adcs-issuer-config/` (the connection to ADCS) | 5 |
+| -2 | `cluster/base/cluster-trust.yaml` | `applications/cluster-trust/` (trust the company CA) | 8 |
+
 ---
 
 ## Before you start: what you need from the Active Directory team
@@ -192,41 +205,14 @@ Three pods `Running`: `cert-manager`, `cert-manager-cainjector` and `cert-manage
 
 ## Step 3: Install the ADCS issuer
 
-**What:** the plug-in that connects cert-manager to ADCS. It is installed with a small chart of
-our own that wraps the official chart. In Step 5 we add the connection to ADCS to the same chart.
+**What:** the plug-in that connects cert-manager to ADCS, installed from its official Helm chart
+in your internal Helm repo.
 
-**Why a chart of our own:** all settings (image from the internal registry, OpenShift mode) live in
-one `values.yaml` in Git, and the ADCS connection is released together with the plug-in.
+**How:** one Application file. It points at the chart, and all settings (image from the internal
+registry, OpenShift mode) are written directly in the file under `helm.valuesObject`. It runs on
+every cluster, so the file goes in `cluster/base/`.
 
 ```bash
-mkdir -p cluster/applications/adcs-issuer/templates
-
-cat > cluster/applications/adcs-issuer/Chart.yaml <<EOF
-apiVersion: v2
-name: adcs-issuer
-version: 1.0.0
-dependencies:
-  - name: adcs-issuer
-    version: 2.2.2
-    repository: $CHART_REPO
-EOF
-
-cat > cluster/applications/adcs-issuer/values.yaml <<EOF
-adcs-issuer:
-  # Creates the security context constraint (SCC) the plug-in needs on OpenShift
-  openshift:
-    enabled: true
-  controllerManager:
-    manager:
-      image:
-        repository: $REGISTRY/djkormo/adcs-issuer
-        tag: 2.2.2
-        imagePullPolicy: IfNotPresent
-  metricsService:
-    serviceMonitor:
-      enabled: false
-EOF
-
 cat > cluster/base/adcs-issuer.yaml <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -234,13 +220,29 @@ metadata:
   name: adcs-issuer
   namespace: openshift-gitops
   annotations:
+    # After cert-manager (-3)
     argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: default
   source:
-    repoURL: $GIT_REPO
-    targetRevision: main
-    path: cluster/applications/adcs-issuer
+    repoURL: $CHART_REPO
+    chart: adcs-issuer
+    targetRevision: 2.2.2
+    helm:
+      releaseName: adcs-issuer
+      valuesObject:
+        # Creates the security context constraint (SCC) the plug-in needs on OpenShift
+        openshift:
+          enabled: true
+        controllerManager:
+          manager:
+            image:
+              repository: $REGISTRY/djkormo/adcs-issuer
+              tag: 2.2.2
+              imagePullPolicy: IfNotPresent
+        metricsService:
+          serviceMonitor:
+            enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: adcs-issuer
@@ -251,8 +253,6 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
 EOF
-
-helm dependency update cluster/applications/adcs-issuer
 ```
 
 Add `- adcs-issuer.yaml` to the list in `cluster/base/kustomization.yaml`.
@@ -260,12 +260,13 @@ Add `- adcs-issuer.yaml` to the list in `cluster/base/kustomization.yaml`.
 **Check** before you commit (only your registry may appear):
 
 ```bash
-helm template adcs-issuer cluster/applications/adcs-issuer -n adcs-issuer | grep 'image:' | sort -u
+yq '.spec.source.helm.valuesObject' cluster/base/adcs-issuer.yaml > /tmp/adcs-values.yaml
+helm template adcs-issuer adcs-issuer --repo $CHART_REPO --version 2.2.2 -n adcs-issuer \
+  -f /tmp/adcs-values.yaml | grep 'image:' | sort -u
 ```
 
-Commit everything **except** the folder `cluster/applications/adcs-issuer/charts/`. Open a pull
-request and merge it. If your Helm repo needs a login, add it once in the Argo CD UI:
-**Settings → Repositories → Connect Repo**, type **Helm**.
+Commit, open a pull request and merge it. If your Helm repo needs a login, add it once in the
+Argo CD UI: **Settings → Repositories → Connect Repo**, type **Helm**.
 
 **Check** after the merge:
 
@@ -312,15 +313,17 @@ to use and which login to use. "Cluster" means every namespace on the cluster ca
 **Why `caBundle`:** the plug-in talks HTTPS to the Web Enrollment site and must trust its
 certificate. `caBundle` is the CA chain from Step 1, base64-encoded.
 
+**How:** a plain YAML file in its own folder, and an Application that points at it. It comes in
+the wave after the plug-in (Step 3), because the plug-in installs the `ClusterAdcsIssuer` type.
+
 ```bash
-cat > cluster/applications/adcs-issuer/templates/clusteradcsissuer.yaml <<EOF
+mkdir -p cluster/applications/adcs-issuer-config
+
+cat > cluster/applications/adcs-issuer-config/clusteradcsissuer.yaml <<EOF
 apiVersion: adcs.certmanager.csf.nokia.com/v1
 kind: ClusterAdcsIssuer
 metadata:
   name: adcs
-  annotations:
-    # The CRD is installed by the same chart: skip the dry-run on the very first sync
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   url: $ADCS_URL
   templateName: $ADCS_TEMPLATE
@@ -330,9 +333,41 @@ spec:
   statusCheckInterval: 5m
   retryInterval: 5m
 EOF
+
+cat > cluster/applications/adcs-issuer-config/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - clusteradcsissuer.yaml
+EOF
+
+cat > cluster/base/adcs-issuer-config.yaml <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: adcs-issuer-config
+  namespace: openshift-gitops
+  annotations:
+    # After adcs-issuer (-2), which installs the ClusterAdcsIssuer type
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: $GIT_REPO
+    targetRevision: main
+    path: cluster/applications/adcs-issuer-config
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+EOF
 ```
 
-Commit, open a pull request and merge it.
+Add `- adcs-issuer-config.yaml` to the list in `cluster/base/kustomization.yaml`. Commit, open a
+pull request and merge it.
 
 **Check:**
 

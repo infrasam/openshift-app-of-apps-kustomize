@@ -2,12 +2,31 @@
 
 When you are done:
 
-- **OpenBao** stores your secrets (it is the open-source version of Vault).
-- **External Secrets Operator (ESO)** copies them from OpenBao into normal Kubernetes Secrets.
+- **OpenBao** stores your secrets (it is the open-source version of Vault). It sets itself up
+  and unlocks itself from Git: no scripts, no manual configuration, no root token lying around.
+- **External Secrets Operator (ESO)** copies secrets from OpenBao into normal Kubernetes Secrets.
 - Git only contains *where* a secret is, never the value.
 
 Run every command from the root of the Git repository. Each step ends with a **Check**. Do not
 start the next step until the check passes.
+
+---
+
+## How the pieces fit together
+
+Each part is its own Argo CD Application: one small file in Git that points at a folder or a
+Helm chart. The **sync wave** decides the order. Argo CD only starts a wave when everything in
+the waves before it is healthy, so each part comes after what it depends on.
+
+| Wave | Application file | Points at | Why this order |
+|---|---|---|---|
+| -1 | `cluster/base/external-secrets.yaml` | `applications/external-secrets-operator/` | ESO must exist before anything uses it |
+| 0 | `cluster/overlays/<hub>/openbao-config.yaml` | `applications/openbao-config/` | What OpenBao **needs** before it starts: namespace, certificate, CA bundle |
+| 1 | `cluster/overlays/<hub>/openbao.yaml` | The OpenBao Helm chart, settings written in the file | OpenBao itself |
+| 2 | `cluster/overlays/<hub>/secret-store.yaml` | `applications/secret-store/` | What **uses** OpenBao: the ESO connection. It can only become healthy once OpenBao runs. |
+
+ESO goes in `cluster/base/` because every cluster needs it. OpenBao goes in the hub's overlay,
+because there is one secret store for the whole fleet.
 
 ---
 
@@ -161,99 +180,28 @@ Three pods `Running`: `external-secrets`, `external-secrets-webhook` and
 
 ---
 
-## Step 3: Install OpenBao
+## Step 3: What OpenBao needs before it starts (wave 0)
 
-OpenBao is installed with a small chart of our own that wraps the official chart. All settings
-are in one file, `values.yaml`.
+Four small files, one per thing:
 
-```bash
-mkdir -p cluster/applications/openbao/templates
-
-cat > cluster/applications/openbao/Chart.yaml <<EOF
-apiVersion: v2
-name: openbao
-version: 1.0.0
-dependencies:
-  - name: openbao
-    version: 0.30.0
-    repository: $CHART_REPO
-EOF
-
-cat > cluster/applications/openbao/values.yaml <<EOF
-global:
-  openshift: true
-  tlsDisable: false
-
-openbao:
-  injector:
-    enabled: false
-  server:
-    image:
-      registry: $REGISTRY
-      repository: openbao/openbao
-      tag: "2.7.0"
-    route:
-      enabled: true
-      host: openbao.$APPS_DOMAIN
-      tls:
-        termination: passthrough
-    # Counts as ready while sealed, so Argo CD does not wait for the manual unseal
-    readinessProbe:
-      path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
-    volumes:
-      - name: tls
-        secret:
-          secretName: openbao-tls
-      - name: ca
-        configMap:
-          name: openbao-ca
-    volumeMounts:
-      - name: tls
-        mountPath: /openbao/tls
-      - name: ca
-        mountPath: /openbao/ca
-    extraEnvironmentVars:
-      BAO_CACERT: /openbao/ca/ca-bundle.crt
-    ha:
-      enabled: true
-      replicas: 3
-      raft:
-        enabled: true
-        setNodeId: true
-        config: |
-          ui = true
-          listener "tcp" {
-            address         = "[::]:8200"
-            cluster_address = "[::]:8201"
-            tls_cert_file   = "/openbao/tls/tls.crt"
-            tls_key_file    = "/openbao/tls/tls.key"
-          }
-          storage "raft" {
-            path = "/openbao/data"
-            retry_join {
-              leader_api_addr     = "https://openbao-0.openbao-internal:8200"
-              leader_ca_cert_file = "/openbao/ca/ca-bundle.crt"
-            }
-            retry_join {
-              leader_api_addr     = "https://openbao-1.openbao-internal:8200"
-              leader_ca_cert_file = "/openbao/ca/ca-bundle.crt"
-            }
-            retry_join {
-              leader_api_addr     = "https://openbao-2.openbao-internal:8200"
-              leader_ca_cert_file = "/openbao/ca/ca-bundle.crt"
-            }
-          }
-          service_registration "kubernetes" {}
-  ui:
-    enabled: true
-EOF
-```
-
-Three small extra files: the TLS certificate, the CA that ESO trusts, and the connection from ESO
-to OpenBao (`ClusterSecretStore`).
+| File | What | Why |
+|---|---|---|
+| `namespace.yaml` | The namespace `openbao` | Created first, so the certificate and the unseal key (step 4) can exist before OpenBao starts |
+| `certificate.yaml` | OpenBao's TLS certificate from your corporate CA | Everything talks HTTPS to OpenBao |
+| `ca.yaml` | A ConfigMap that OpenShift fills with the CAs the cluster trusts | So the OpenBao pods and ESO trust OpenBao's certificate |
+| `serviceaccount-admin.yaml` | The identity administrators log in with | Instead of a root token (step 6) |
 
 ```bash
-cat > cluster/applications/openbao/templates/certificate.yaml <<EOF
+mkdir -p cluster/applications/openbao-config
+
+cat > cluster/applications/openbao-config/namespace.yaml <<'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openbao
+EOF
+
+cat > cluster/applications/openbao-config/certificate.yaml <<EOF
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -267,13 +215,16 @@ spec:
     - openbao.$APPS_DOMAIN
   ipAddresses:
     - 127.0.0.1
+  privateKey:
+    algorithm: RSA
+    size: 2048
   issuerRef:
     group: $ISSUER_GROUP
     kind: $ISSUER_KIND
     name: $ISSUER
 EOF
 
-cat > cluster/applications/openbao/templates/ca.yaml <<'EOF'
+cat > cluster/applications/openbao-config/ca.yaml <<'EOF'
 # OpenShift fills this ConfigMap with the CAs the cluster trusts
 apiVersion: v1
 kind: ConfigMap
@@ -284,94 +235,63 @@ metadata:
     config.openshift.io/inject-trusted-cabundle: "true"
 EOF
 
-cat > cluster/applications/openbao/templates/secretstore.yaml <<'EOF'
+cat > cluster/applications/openbao-config/serviceaccount-admin.yaml <<'EOF'
+# Administrators log in to OpenBao with a short-lived token for this ServiceAccount.
+# Who may create that token is decided by OpenShift RBAC.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: eso-auth
+  name: openbao-admin
   namespace: openbao
----
-apiVersion: external-secrets.io/v1
-kind: ClusterSecretStore
-metadata:
-  name: openbao
-  annotations:
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-spec:
-  provider:
-    vault:
-      server: https://openbao-active.openbao.svc:8200
-      path: secret
-      version: v2
-      caProvider:
-        type: ConfigMap
-        name: openbao-ca
-        namespace: openbao
-        key: ca-bundle.crt
-      auth:
-        kubernetes:
-          mountPath: kubernetes
-          role: eso
-          serviceAccountRef:
-            name: eso-auth
-            namespace: openbao
 EOF
 
-cat > cluster/overlays/$HUB/openbao.yaml <<EOF
+cat > cluster/applications/openbao-config/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - certificate.yaml
+  - ca.yaml
+  - serviceaccount-admin.yaml
+EOF
+
+cat > cluster/overlays/$HUB/openbao-config.yaml <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: openbao
+  name: openbao-config
   namespace: openshift-gitops
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
   source:
     repoURL: $GIT_REPO
     targetRevision: main
-    path: cluster/applications/openbao
+    path: cluster/applications/openbao-config
   destination:
     server: https://kubernetes.default.svc
-    namespace: openbao
   syncPolicy:
     automated:
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
       - ServerSideApply=true
 EOF
-
-helm dependency update cluster/applications/openbao
 ```
 
-> **ADCS and certificate names.** Some ADCS templates refuse wildcard names (`*.openbao-internal`)
-> or short internal names. If the certificate in `openbao` never becomes ready, look at
-> `oc -n openbao get adcsrequest` (see the cert-manager guide). Instead of the wildcard you can list
-> the three pods: `openbao-0.openbao-internal`, `openbao-1.openbao-internal`, `openbao-2.openbao-internal`.
+Add `- openbao-config.yaml` to the list in `cluster/overlays/$HUB/kustomization.yaml`. Commit,
+open a pull request and merge it.
 
-Add `- openbao.yaml` to the list in `cluster/overlays/$HUB/kustomization.yaml`.
-
-**Check** before you commit (only your registry may appear):
+**Check:**
 
 ```bash
-helm template openbao cluster/applications/openbao -n openbao | grep 'image:' | sort -u
+oc -n openbao get certificate openbao-tls        # READY True
+oc -n openbao get configmap openbao-ca -o jsonpath='{.data.ca-bundle\.crt}' | grep -c 'BEGIN CERTIFICATE'   # more than 0
 ```
 
-Commit everything **except** the folder `cluster/applications/openbao/charts/`. Open a pull
-request and merge it.
-
-If your Helm repo needs a login, Argo CD must know it: in the Argo CD UI go to
-**Settings → Repositories → Connect Repo**, choose type **Helm**, and enter `$CHART_REPO` with a
-read-only user.
-
-**Check** after the merge:
-
-```bash
-oc -n openbao get pods
-```
-
-Three pods `openbao-0/1/2`, `Running`. They are still locked ("sealed"). That is expected.
+> **ADCS and certificate names.** Some ADCS templates refuse wildcard names (`*.openbao-internal`).
+> If the certificate never becomes ready, replace that line with the three pod names:
+> `openbao-0.openbao-internal`, `openbao-1.openbao-internal`, `openbao-2.openbao-internal`.
 
 ### About the certificate
 
@@ -411,7 +331,7 @@ Then replace `ca.yaml` with a ConfigMap that contains it, commit and merge:
 
 ```bash
 oc create configmap openbao-ca -n openbao --from-file=ca-bundle.crt=corporate-root.pem \
-  --dry-run=client -o yaml > cluster/applications/openbao/templates/ca.yaml
+  --dry-run=client -o yaml > cluster/applications/openbao-config/ca.yaml
 ```
 
 **Option 2: let OpenShift issue the certificate instead (service CA).** OpenShift has a built-in
@@ -423,48 +343,344 @@ corporate CA anyway. Use it only if option 1 is not possible today.
 
 ---
 
-## Step 4: Unlock OpenBao (first time)
+## Step 4: Create the unseal key (once, by hand)
 
-`init` creates **5 keys**. Any **3** of them unlock OpenBao. It also creates a **root token**
-(the admin password). Everything goes into a file that only you can read.
+**What:** a random 32-byte key in a Secret.
+
+**Why:** OpenBao encrypts everything it stores. This key lets it unlock itself every time it
+starts, so nobody has to type unseal keys after a restart. It is the one thing you create by
+hand, because key material never goes into Git.
 
 ```bash
 umask 077
-oc -n openbao exec openbao-0 -- bao operator init -format=json > ~/openbao-init.json
-
-for pod in openbao-0 openbao-1 openbao-2; do
-  for i in 0 1 2; do
-    jq -j ".unseal_keys_b64[$i]" ~/openbao-init.json \
-      | oc -n openbao exec -i $pod -- bao write -format=json sys/unseal key=- | jq -c '{sealed: .data.sealed}'
-  done
-done
+openssl rand -out ~/openbao-unseal.key 32
+oc -n openbao create secret generic openbao-unseal-key --from-file=unseal.key=$HOME/openbao-unseal.key
 ```
 
-**Check:** the last line for each pod says `{"sealed":false}`.
+Store `~/openbao-unseal.key` in your password manager (or your organisation's key safe), then
+delete the local file. **Without this key, OpenBao's data cannot be read again** if the Secret is
+lost.
 
-Then move the 5 keys and the root token from `~/openbao-init.json` into your password manager
-(or to 5 different people). Never put them in Git, a ticket or a chat.
+**Check:**
+
+```bash
+oc -n openbao get secret openbao-unseal-key      # DATA 1
+```
 
 ---
 
-## Step 5: Let ESO log in to OpenBao
+## Step 5: Install OpenBao (wave 1)
 
-This turns on secret storage, and allows ESO to read secrets (but never write them).
+**What:** the official OpenBao Helm chart from your internal Helm repo. All its settings are
+written directly in the Application file, under `helm.valuesObject`.
+
+**Why it needs no script:** the OpenBao configuration contains `initialize` blocks. On its very
+first start, OpenBao carries them out by itself: it turns on secret storage, lets ESO log in, and
+creates the admin role. The temporary root token it uses for that is revoked straight away.
+
+> The `initialize` blocks run **once**, on the first start of an empty OpenBao. Changing them
+> later has no effect on a running OpenBao. Later changes (for example a new policy) are made by
+> an administrator (step 6).
 
 ```bash
-{ jq -r .root_token ~/openbao-init.json; cat <<'SCRIPT'
-bao secrets enable -path=secret -version=2 kv
-bao auth enable kubernetes
-bao write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc
-echo 'path "secret/data/*" { capabilities = ["read"] }' | bao policy write eso -
-bao write auth/kubernetes/role/eso \
-  bound_service_account_names=eso-auth \
-  bound_service_account_namespaces=openbao \
-  token_policies=eso
-bao audit enable file file_path=stdout
-SCRIPT
-} | oc -n openbao exec -i openbao-0 -- sh -c 'read -r BAO_TOKEN; export BAO_TOKEN; sh -s'
+cat > cluster/overlays/$HUB/openbao.yaml <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: openshift-gitops
+  annotations:
+    # After openbao-config (0): the namespace, certificate and CA bundle must exist
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: $CHART_REPO
+    chart: openbao
+    targetRevision: 0.30.0
+    helm:
+      releaseName: openbao
+      valuesObject:
+        global:
+          openshift: true
+          tlsDisable: false
+
+        # Secrets reach applications through ESO, not through sidecars
+        injector:
+          enabled: false
+
+        server:
+          image:
+            registry: $REGISTRY
+            repository: openbao/openbao
+            tag: "2.7.0"
+
+          # OpenShift Route, TLS passthrough: OpenBao shows its own certificate
+          route:
+            enabled: true
+            host: openbao.$APPS_DOMAIN
+            tls:
+              termination: passthrough
+
+          # "Ready" also while starting or sealed, so Argo CD never waits on OpenBao's state
+          readinessProbe:
+            path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+
+          volumes:
+            - name: tls
+              secret:
+                secretName: openbao-tls
+            - name: ca
+              configMap:
+                name: openbao-ca
+            - name: unseal-key
+              secret:
+                secretName: openbao-unseal-key
+          volumeMounts:
+            - name: tls
+              mountPath: /openbao/tls
+            - name: ca
+              mountPath: /openbao/ca
+            - name: unseal-key
+              mountPath: /openbao/unseal
+          extraEnvironmentVars:
+            BAO_CACERT: /openbao/ca/ca-bundle.crt
+
+          ha:
+            enabled: true
+            replicas: 3
+            raft:
+              enabled: true
+              setNodeId: true
+              config: |
+                ui = true
+
+                listener "tcp" {
+                  address         = "[::]:8200"
+                  cluster_address = "[::]:8201"
+                  tls_cert_file   = "/openbao/tls/tls.crt"
+                  tls_key_file    = "/openbao/tls/tls.key"
+                }
+
+                storage "raft" {
+                  path = "/openbao/data"
+                  retry_join {
+                    leader_api_addr     = "https://openbao-0.openbao-internal:8200"
+                    leader_ca_cert_file = "/openbao/ca/ca-bundle.crt"
+                  }
+                  retry_join {
+                    leader_api_addr     = "https://openbao-1.openbao-internal:8200"
+                    leader_ca_cert_file = "/openbao/ca/ca-bundle.crt"
+                  }
+                  retry_join {
+                    leader_api_addr     = "https://openbao-2.openbao-internal:8200"
+                    leader_ca_cert_file = "/openbao/ca/ca-bundle.crt"
+                  }
+                }
+
+                service_registration "kubernetes" {}
+
+                # Unlock automatically with the key from step 4
+                seal "static" {
+                  current_key_id = "key-1"
+                  current_key    = "file:///openbao/unseal/unseal.key"
+                }
+
+                # Every request is logged to the pods' output (collected by OpenShift logging)
+                audit "file" "stdout" {
+                  options {
+                    file_path = "stdout"
+                  }
+                }
+
+                # First start only: secret storage at secret/ (key/value, version 2)
+                initialize "secrets" {
+                  request "kv" {
+                    operation = "update"
+                    path      = "sys/mounts/secret"
+                    data = {
+                      type    = "kv"
+                      options = { version = "2" }
+                    }
+                  }
+                }
+
+                # First start only: OpenShift ServiceAccounts may log in
+                initialize "auth" {
+                  request "enable-kubernetes" {
+                    operation = "update"
+                    path      = "sys/auth/kubernetes"
+                    data      = { type = "kubernetes" }
+                  }
+                  request "config-kubernetes" {
+                    operation = "update"
+                    path      = "auth/kubernetes/config"
+                    data      = { kubernetes_host = "https://kubernetes.default.svc" }
+                  }
+                }
+
+                # First start only: what ESO and administrators may do
+                initialize "policies" {
+                  request "eso" {
+                    operation = "update"
+                    path      = "sys/policies/acl/eso"
+                    data = {
+                      policy = <<-EOT
+                        path "secret/data/*"     { capabilities = ["read"] }
+                        path "secret/metadata/*" { capabilities = ["read", "list"] }
+                      EOT
+                    }
+                  }
+                  request "admin" {
+                    operation = "update"
+                    path      = "sys/policies/acl/admin"
+                    data = {
+                      policy = <<-EOT
+                        path "*" { capabilities = ["create", "read", "update", "patch", "delete", "list", "sudo"] }
+                      EOT
+                    }
+                  }
+                }
+
+                # First start only: who gets which policy
+                initialize "roles" {
+                  request "eso" {
+                    operation = "update"
+                    path      = "auth/kubernetes/role/eso"
+                    data = {
+                      bound_service_account_names      = ["eso-auth"]
+                      bound_service_account_namespaces = ["openbao"]
+                      token_policies                   = ["eso"]
+                      token_ttl                        = "1h"
+                    }
+                  }
+                  request "admin" {
+                    operation = "update"
+                    path      = "auth/kubernetes/role/admin"
+                    data = {
+                      bound_service_account_names      = ["openbao-admin"]
+                      bound_service_account_namespaces = ["openbao"]
+                      token_policies                   = ["admin"]
+                      token_ttl                        = "1h"
+                    }
+                  }
+                }
+
+        ui:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  syncPolicy:
+    automated:
+      # Never prune anything of the secret store automatically
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+EOF
 ```
+
+Add `- openbao.yaml` to `cluster/overlays/$HUB/kustomization.yaml`. Commit, open a pull request
+and merge it.
+
+If your Helm repo needs a login, Argo CD must know it: in the Argo CD UI go to
+**Settings → Repositories → Connect Repo**, choose type **Helm**, and enter `$CHART_REPO` with a
+read-only user.
+
+**Check** (a few minutes after the merge):
+
+```bash
+oc -n openbao get pods
+for pod in openbao-0 openbao-1 openbao-2; do
+  oc -n openbao exec $pod -- bao status -format=json | jq -c --arg pod $pod '{pod: $pod, initialized, sealed}'
+done
+```
+
+Three pods `Running`, and every line says `"initialized":true,"sealed":false`. Nobody unlocked
+anything: OpenBao did it with the key from step 4.
+
+---
+
+## Step 6: Connect ESO to OpenBao (wave 2)
+
+**What:** the ServiceAccount that ESO logs in with, and the `ClusterSecretStore` that tells ESO
+where OpenBao is.
+
+**Why a separate wave:** the store can only become healthy once OpenBao runs. In an earlier wave
+it would block everything after it.
+
+```bash
+mkdir -p cluster/applications/secret-store
+
+cat > cluster/applications/secret-store/serviceaccount.yaml <<'EOF'
+# ESO logs in to OpenBao with a token for this ServiceAccount (role "eso" in openbao.yaml)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eso-auth
+  namespace: openbao
+EOF
+
+cat > cluster/applications/secret-store/clustersecretstore.yaml <<'EOF'
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: openbao
+spec:
+  provider:
+    vault:
+      server: https://openbao-active.openbao.svc:8200
+      path: secret
+      version: v2
+      caProvider:
+        type: ConfigMap
+        name: openbao-ca
+        namespace: openbao
+        key: ca-bundle.crt
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: eso
+          serviceAccountRef:
+            name: eso-auth
+            namespace: openbao
+EOF
+
+cat > cluster/applications/secret-store/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - serviceaccount.yaml
+  - clustersecretstore.yaml
+EOF
+
+cat > cluster/overlays/$HUB/secret-store.yaml <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secret-store
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: $GIT_REPO
+    targetRevision: main
+    path: cluster/applications/secret-store
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+EOF
+```
+
+Add `- secret-store.yaml` to `cluster/overlays/$HUB/kustomization.yaml`. Commit, open a pull
+request and merge it.
 
 **Check:**
 
@@ -476,12 +692,28 @@ oc get clustersecretstore openbao
 
 ---
 
-## Step 6: Give an application a secret
+## Step 7: Log in as administrator
+
+There is no root token and no password. You log in with a short-lived token for the
+ServiceAccount `openbao-admin`. Only people with the right to create tokens in the `openbao`
+namespace (cluster administrators) can do this.
+
+```bash
+oc -n openbao create token openbao-admin | jq -Rc '{role: "admin", jwt: .}' \
+  | curl -s -X POST --data @- https://openbao.$APPS_DOMAIN/v1/auth/kubernetes/login \
+  | jq -r .auth.client_token
+```
+
+Open `https://openbao.$APPS_DOMAIN`, choose the method **Token**, and paste it. The token is valid
+for one hour.
+
+---
+
+## Step 8: Give an application a secret
 
 Two things: put the value in OpenBao, and add an `ExternalSecret` next to the application in Git.
 
-**1. Put the value in OpenBao.** Open `https://openbao.$APPS_DOMAIN`, log in with the root token,
-choose **secret → Create secret**, and enter:
+**1. Put the value in OpenBao.** Log in (step 7), choose **secret → Create secret**, and enter:
 
 - Path: `myapp/db`
 - Keys and values, for example `username` = `myapp` and `password` = `...`
@@ -520,7 +752,7 @@ To change the password later, change it in OpenBao. The Secret is updated within
 
 ---
 
-## Step 7: Move a secret that already exists
+## Step 9: Move a secret that already exists
 
 For applications that already run with a Secret that was created by hand.
 
@@ -532,13 +764,17 @@ For applications that already run with a Secret that was created by hand.
 ```bash
 NS=myapp; SECRET=db-credentials; BAO_PATH=myapp/db
 
-{ jq -r .root_token ~/openbao-init.json
+TOKEN=$(oc -n openbao create token openbao-admin | jq -Rc '{role: "admin", jwt: .}' \
+  | curl -s -X POST --data @- https://openbao.$APPS_DOMAIN/v1/auth/kubernetes/login | jq -r .auth.client_token)
+
+{ printf '%s\n' "$TOKEN"
   oc -n $NS get secret $SECRET -o json | jq -c '.data | map_values(@base64d)'
 } | oc -n openbao exec -i openbao-0 -- sh -c \
   "read -r BAO_TOKEN; export BAO_TOKEN; bao kv put -mount=secret $BAO_PATH -"
+unset TOKEN
 ```
 
-**2. Add the `ExternalSecret` from step 6** with `target.name` = the existing Secret's name and
+**2. Add the `ExternalSecret` from step 8** with `target.name` = the existing Secret's name and
 `key` = the same `BAO_PATH`. Commit and merge.
 
 **3. Restart the application** so it is sure to use the Secret:
@@ -564,14 +800,20 @@ oc -n $NS get secret $SECRET -o json | jq -c '{keys: (.data | keys), owner: .met
 
 | What you see | What to do |
 |---|---|
+| `openbao` stays `Progressing`, pods in `ContainerCreating` | A volume is missing: `oc -n openbao describe pod openbao-0`. Usually the certificate (step 3) is not ready, or the unseal key Secret (step 4) does not exist. |
+| A pod says `sealed: true` | It cannot read the unseal key: check the Secret from step 4 and the pod's log |
+| Pod log: `failed to initialize` | An `initialize` block was rejected. The log names the block. Fix it, then start over with an empty OpenBao (delete the pods **and** their PVCs). |
+| `openbao-1` or `openbao-2` does not join | TLS name or CA problem: the certificate must cover `*.openbao-internal` (or the pod names), and `openbao-ca` must contain the CA that signed it |
 | `ClusterSecretStore` not `Valid` | Check that step 2's network rule exists: `oc -n external-secrets get networkpolicy` should list `eso-user-allow-openbao` |
 | `x509: certificate signed by unknown authority` | See "If the cluster does not trust the corporate CA" in step 3 |
 | `ExternalSecret` says `Secret does not exist` | The path in OpenBao does not match `key:` in the `ExternalSecret` |
 | You fixed the problem but the error stays | `oc -n <ns> annotate externalsecret <name> force-sync=$(date +%s) --overwrite` |
-| OpenBao pods restarted and nothing works | They are sealed again: run the unseal loop from step 4 |
 
 ## Before real production use
 
-- Unlock with keys held by different people, and remove `~/openbao-init.json`.
-- Create personal admin logins and revoke the root token (`bao token revoke -self`).
-- Take backups: `bao operator raft snapshot save`.
+- **Protect the unseal key better.** A static key in a Secret is simple, but anyone who can read
+  that Secret can unlock OpenBao. Replace `seal "static"` with an HSM (`seal "pkcs11"`) or another
+  Vault (`seal "transit"`) when you can.
+- **Personal logins.** Replace the shared `openbao-admin` login with OIDC against your identity
+  provider, so every action in the audit log has a name.
+- **Backups.** Take regular Raft snapshots (`bao operator raft snapshot save`) and test a restore.
