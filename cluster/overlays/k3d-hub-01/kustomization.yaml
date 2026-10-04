@@ -9,4 +9,5 @@ resources:
   - spoke-provisioning.yaml
   - openbao-config.yaml
   - openbao.yaml
+  - secret-store.yaml
   - secret-demo.yaml

@@ -1,5 +1,5 @@
-# Hub-only: everything around OpenBao, as plain YAML: namespace, TLS certificate, UI route,
-# the ServiceAccounts that log in, and the ESO connection (ClusterSecretStore).
+# Hub-only: what OpenBao needs before it starts, as plain YAML: namespace, TLS certificate,
+# UI route and the admin ServiceAccount. (The ESO connection comes after OpenBao: secret-store.yaml.)
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
