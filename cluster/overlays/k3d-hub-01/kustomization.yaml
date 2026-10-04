@@ -7,5 +7,6 @@ resources:
   - ocm-hub.yaml
   - capi.yaml
   - spoke-provisioning.yaml
+  - openbao-config.yaml
   - openbao.yaml
   - secret-demo.yaml

@@ -62,15 +62,13 @@ cluster/
 │   ├── ingress/                           # Istio, GatewayClass, Gateway, wildcard cert, redirect
 │   ├── argocd-route/                      # HTTPRoute
 │   ├── ocm-hub/                           # OCM hub via OLM (= RHACM)
-│   ├── openbao/                           # wrapper Helm chart: OpenBao + ESO connection
-│   │   ├── Chart.yaml                     # dependency: upstream openbao chart
-│   │   ├── Chart.lock
-│   │   ├── values.yaml                    # upstream values under "openbao:"
-│   │   └── templates/
-│   │       ├── certificate.yaml           # TLS from lab-ca
-│   │       ├── tlsroute.yaml              # UI through the Gateway (TLS passthrough)
-│   │       ├── serviceaccount.yaml        # identity ESO logs in with
-│   │       └── clustersecretstore.yaml    # ESO -> OpenBao
+│   ├── openbao-config/                    # everything around OpenBao, plain YAML
+│   │   ├── namespace.yaml
+│   │   ├── certificate.yaml               # TLS from lab-ca
+│   │   ├── tlsroute.yaml                  # UI through the Gateway (TLS passthrough)
+│   │   ├── serviceaccount.yaml            # identity ESO logs in with
+│   │   ├── serviceaccount-admin.yaml      # identity administrators log in with
+│   │   └── clustersecretstore.yaml        # ESO -> OpenBao
 │   └── secret-demo/                       # ExternalSecret demo
 └── overlays/
     └── k3d-hub-01/                        # the hub
@@ -78,7 +76,8 @@ cluster/
         ├── kustomization.yaml             # ../../base + the files below
         ├── ocm-hub.yaml                   # 0  Application: OCM hub
         ├── capi.yaml                      # 1  Application: Cluster API (= Hive)
-        ├── openbao.yaml                   # 1  Application: OpenBao chart (hub only)
+        ├── openbao-config.yaml            # 0  Application: applications/openbao-config/
+        ├── openbao.yaml                   # 1  Application: OpenBao Helm chart, settings inline
         ├── spoke-provisioning.yaml        # 2  ApplicationSet over managed-clusters/*
         ├── secret-demo.yaml               # 3  Application: ESO demo
         ├── patch/argocd-patch.yaml
@@ -100,14 +99,14 @@ docs/
 ├── openshift-cert-manager-adcs.md         # cert-manager + Active Directory Certificate Services
 └── openshift-secrets-openbao-eso.md       # OpenBao + External Secrets on OpenShift
 scripts/
-├── bootstrap.sh                           # create a lab cluster and hand it to Git
-└── openbao-configure.sh                   # KV, Kubernetes auth, policies in OpenBao
+└── bootstrap.sh                           # create a lab cluster and hand it to Git
 ```
 
 **Every app is two things:** what is installed lives in `cluster/applications/<app>/`, and
 *that* it is installed on a cluster (and in which wave) is an Argo CD Application in `base/`
 (every cluster) or in the cluster's overlay (only that cluster). OpenBao is hub-only: there is
-one secret store for the whole fleet, and the ESO connection to it ships in the same chart.
+one secret store for the whole fleet. OpenBao itself is the upstream Helm chart with its
+settings inline in `openbao.yaml`; everything around it is plain YAML in `openbao-config/`.
 
 **A folder belongs to the cluster it is applied to.** How a spoke is created is applied to the
 hub, so it lives in the hub's `managed-clusters/` inventory. What runs on the spoke will live in
@@ -212,21 +211,22 @@ Import `~/lab-root-ca.crt` in the browser as a certificate authority too.
 kubectl -n openshift-gitops get secret argocd-cluster -o jsonpath='{.data.admin\.password}' | base64 -d; echo
 ```
 
-**Initialize OpenBao** (first time only). The keys go to a file outside the repository:
+**Create OpenBao's unseal key** (once per hub, never in Git). OpenBao then initializes,
+configures and unlocks itself from `cluster/overlays/k3d-hub-01/openbao.yaml`:
 
 ```bash
 umask 077
-kubectl -n openbao exec openbao-0 -- bao operator init -key-shares=5 -key-threshold=3 -format=json > ~/openbao-init.json
-scripts/openbao-configure.sh
+openssl rand -out ~/openbao-unseal.key 32
+kubectl -n openbao create secret generic openbao-unseal-key --from-file=unseal.key=$HOME/openbao-unseal.key
 ```
 
-**Unseal OpenBao** after every restart of its pod:
+**Log in to OpenBao as admin.** The token is valid for one hour; paste it in the UI (method
+*Token*):
 
 ```bash
-for i in 0 1 2; do
-  jq -j ".unseal_keys_b64[$i]" ~/openbao-init.json \
-    | kubectl -n openbao exec -i openbao-0 -- bao write -format=json sys/unseal key=- | jq -c '{sealed: .data.sealed}'
-done
+kubectl -n openbao create token openbao-admin | jq -Rc '{role: "admin", jwt: .}' \
+  | curl -s -X POST --data @- https://openbao.apps.hub.127.0.0.1.nip.io/v1/auth/kubernetes/login \
+  | jq -r .auth.client_token
 ```
 
 The UI is at <https://openbao.apps.hub.127.0.0.1.nip.io>.
