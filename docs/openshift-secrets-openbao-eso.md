@@ -13,6 +13,9 @@ start the next step until the check passes.
 
 ## Step 1: Fill in your values
 
+OpenBao gets its TLS certificate from cert-manager. Set that up first with
+[openshift-cert-manager-adcs.md](openshift-cert-manager-adcs.md).
+
 Change the values to match your environment, then paste the block into your terminal. Every
 later step uses these variables.
 
@@ -22,7 +25,11 @@ export APPS_DOMAIN=apps.ocp-hub-01.example.internal     # oc get ingresses.confi
 export REGISTRY=registry.example.internal               # internal image registry
 export CHART_REPO=https://charts.example.internal/repository/helm   # internal Helm repo
 export GIT_REPO=https://git.example.internal/platform/fleet.git
-export ISSUER=corporate-ca                              # oc get clusterissuer
+# The cert-manager issuer from openshift-cert-manager-adcs.md (ADCS). For another issuer type,
+# use its group, kind and name instead (e.g. cert-manager.io / ClusterIssuer / <name>).
+export ISSUER_GROUP=adcs.certmanager.csf.nokia.com
+export ISSUER_KIND=ClusterAdcsIssuer
+export ISSUER=adcs
 ```
 
 **Check:** the OpenBao image and chart are in your internal registry and Helm repo:
@@ -261,7 +268,8 @@ spec:
   ipAddresses:
     - 127.0.0.1
   issuerRef:
-    kind: ClusterIssuer
+    group: $ISSUER_GROUP
+    kind: $ISSUER_KIND
     name: $ISSUER
 EOF
 
@@ -336,6 +344,11 @@ EOF
 
 helm dependency update cluster/applications/openbao
 ```
+
+> **ADCS and certificate names.** Some ADCS templates refuse wildcard names (`*.openbao-internal`)
+> or short internal names. If the certificate in `openbao` never becomes ready, look at
+> `oc -n openbao get adcsrequest` (see the cert-manager guide). Instead of the wildcard you can list
+> the three pods: `openbao-0.openbao-internal`, `openbao-1.openbao-internal`, `openbao-2.openbao-internal`.
 
 Add `- openbao.yaml` to the list in `cluster/overlays/$HUB/kustomization.yaml`.
 
