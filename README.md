@@ -9,6 +9,8 @@ The repository runs as a **lab on a laptop** (k3d, no domain, no Red Hat subscri
 open-source upstream of every product. Every pattern maps one-to-one to real OpenShift + RHACM.
 To create child clusters in vCenter from Git with an existing RHACM hub (proof of concept), see
 [docs/openshift-implementation.md](docs/openshift-implementation.md).
+To issue certificates from Active Directory Certificate Services with cert-manager, see
+[docs/openshift-cert-manager-adcs.md](docs/openshift-cert-manager-adcs.md).
 To run the secret chain (OpenBao, External Secrets Operator, secrets for applications) on
 OpenShift, see [docs/openshift-secrets-openbao-eso.md](docs/openshift-secrets-openbao-eso.md).
 
@@ -95,6 +97,7 @@ cluster/
             └── infra/                     # creates the infra Application
 docs/
 ├── openshift-implementation.md            # child clusters from Git on an existing RHACM hub
+├── openshift-cert-manager-adcs.md         # cert-manager + Active Directory Certificate Services
 └── openshift-secrets-openbao-eso.md       # OpenBao + External Secrets on OpenShift
 scripts/
 ├── bootstrap.sh                           # create a lab cluster and hand it to Git
