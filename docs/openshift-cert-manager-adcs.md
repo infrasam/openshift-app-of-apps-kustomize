@@ -11,14 +11,88 @@ internal services: the mirror registry, the internal Helm repository, the intern
 ADCS.
 
 Run every command from the root of the Git repository, logged in (`oc login`) to the **new
-cluster** unless a step says otherwise. Each step explains **what** you do and **why**, and ends
-with a **Check**. Do not start the next step until the check passes.
+cluster**. Each step explains **what** you do and **why**, and ends with a **Check**. Do not
+start the next step until the check passes.
 
 ---
 
-## How it works
+## Step 0: Understand where the files go
 
-There are four parts involved:
+Read this once before you start. Everything else in the guide builds on it.
+
+### The cluster's own Argo CD reads one folder
+
+The new cluster has its own Argo CD (OpenShift GitOps). It watches **one folder** in Git: the
+cluster's own folder, `cluster/overlays/<cluster>/`. Whatever is listed in that folder's
+`kustomization.yaml` ends up on the cluster. Nothing else does.
+
+```
+cluster/overlays/ocp-poc-01/          ← the cluster's folder. Its Argo CD reads only this.
+├── kustomization.yaml                ← the list of apps on this cluster
+└── apps/
+    └── cert-manager/                 ← one folder per app. This guide creates this one.
+```
+
+To add an app to a cluster you do two things: create the app's folder, and add it to the list.
+
+### One app = one folder, with everything that belongs to it
+
+cert-manager is not one thing but three that only make sense together: cert-manager itself, the
+plug-in that talks to ADCS, and the connection to ADCS. So they live in **one** folder:
+
+```
+apps/cert-manager/
+├── kustomization.yaml          ← lists the Application files below (and only those)
+│
+├── cert-manager.yaml           ← Application: "install what is in ./operator"
+├── operator/                   ←   cert-manager itself (from the operator catalog)
+│
+├── adcs-issuer.yaml            ← Application: "install the ADCS plug-in's Helm chart"
+│                                    (no folder: the chart comes from the Helm repo)
+│
+├── adcs-issuer-config.yaml     ← Application: "install what is in ./adcs"
+├── adcs/                       ←   the connection to ADCS: URL, template, CA
+│
+├── cluster-trust.yaml          ← Application: "install what is in ./trust"
+└── trust/                      ←   makes the cluster trust the company CA
+```
+
+Two kinds of files, and the difference matters:
+
+| Kind | What it is | Example |
+|---|---|---|
+| **Application file** (`*.yaml` directly in the app folder) | An instruction to Argo CD: *"install this folder (or this Helm chart) on the cluster"* | `cert-manager.yaml` |
+| **Content** (the files in a subfolder) | What actually gets installed | `operator/operator.yaml` |
+
+The app folder's `kustomization.yaml` lists **only the Application files**. Each Application then
+installs its own subfolder. That is the whole "app of apps" idea: Argo CD installs Applications,
+and each Application installs one part.
+
+### The order: sync waves
+
+The parts depend on each other. The plug-in needs cert-manager, the ADCS connection needs the
+plug-in. Each Application file has a **sync wave** number. Argo CD installs the lowest number
+first, waits until it is healthy, then goes on to the next:
+
+| Wave | Application | Installs | Needs |
+|---|---|---|---|
+| -3 | `cert-manager.yaml` | cert-manager | nothing |
+| -2 | `adcs-issuer.yaml` | the ADCS plug-in | cert-manager |
+| -2 | `cluster-trust.yaml` | trust of the company CA | nothing |
+| -1 | `adcs-issuer-config.yaml` | the ADCS connection | the plug-in, which brings the `ClusterAdcsIssuer` type |
+
+### See the result before anything happens
+
+At any time you can ask Git what the cluster's Argo CD will see. Nothing is installed by this:
+
+```bash
+oc kustomize cluster/overlays/<cluster>                      # the list of Applications
+oc kustomize cluster/overlays/<cluster>/apps/cert-manager/operator   # what one Application installs
+```
+
+---
+
+## How cert-manager and ADCS work together
 
 | Part | What it does |
 |---|---|
@@ -26,8 +100,6 @@ There are four parts involved:
 | **ADCS issuer** | A plug-in for cert-manager. It sends the certificate request to ADCS and brings the signed certificate back. |
 | **ADCS Web Enrollment** | The ADCS web page (`https://<server>/certsrv`) that the ADCS issuer talks to. |
 | **Certificate template** | A setting in ADCS that decides what kind of certificate you get: how long it is valid, what it may be used for. |
-
-What happens when you ask for a certificate:
 
 ```mermaid
 flowchart LR
@@ -42,32 +114,19 @@ flowchart LR
 
 The private key is created inside the cluster and never leaves it. ADCS only sees the request.
 
-### How the files fit together
-
-Each part is its own Argo CD Application: one small file in `cluster/base/` (every cluster gets
-it) that points at a folder or a Helm chart. The **sync wave** decides the order. Argo CD only
-starts a wave when everything in the waves before it is healthy.
-
-| Wave | Application file | Points at | Step |
-|---|---|---|---|
-| -3 | `cluster/base/cert-manager.yaml` | `applications/cert-manager/` (the operator) | 3 |
-| -2 | `cluster/base/adcs-issuer.yaml` | The ADCS issuer Helm chart, settings written in the file | 4 |
-| -2 | `cluster/base/cluster-trust.yaml` | `applications/cluster-trust/` (trust the company CA) | 9 |
-| -1 | `cluster/base/adcs-issuer-config.yaml` | `applications/adcs-issuer-config/` (the connection to ADCS) | 6 |
-
-### How the files reach the new cluster
-
-These files are applied by **the Argo CD that manages the new cluster**. That is either the
-cluster's own OpenShift GitOps (it reads Git itself) or the hub's Argo CD (it pushes to the
-cluster's API). It decides which network openings you need, in the table below.
-
 ---
 
 ## Before you start
 
-### From the Active Directory team
+### The cluster's own Argo CD
 
-Ask the team that runs ADCS for these five things. You cannot finish the guide without them.
+The new cluster must already have OpenShift GitOps reading `cluster/overlays/<cluster>/`. Check:
+
+```bash
+oc -n openshift-gitops get applications       # an Application that points at cluster/overlays/<cluster>
+```
+
+### From the Active Directory team
 
 | # | What | Why |
 |---|---|---|
@@ -84,7 +143,7 @@ A disconnected cluster can only use what has been copied (mirrored) into your in
 | What | Where | Why |
 |---|---|---|
 | The operator `openshift-cert-manager-operator` | The mirrored operator catalog (`oc-mirror`), including its images | OLM installs the operator from the catalog |
-| The image `docker.io/djkormo/adcs-issuer:2.2.2` | The internal registry, as `<registry>/djkormo/adcs-issuer:2.2.2` | The ADCS issuer pod runs it |
+| The image `docker.io/djkormo/adcs-issuer:2.2.2` | The mirror registry, as `<registry>/djkormo/adcs-issuer:2.2.2` | The ADCS issuer pod runs it |
 | The Helm chart `adcs-issuer` 2.2.2 (from `https://djkormo.github.io/adcs-issuer/`) | The internal Helm repository | Argo CD installs the ADCS issuer from it |
 
 ### From the network team
@@ -98,8 +157,7 @@ must resolve (DNS) **from the new cluster's machine network**:
 | Cluster nodes | ADCS Web Enrollment server | 443 | Request certificates |
 | Cluster nodes | DNS server that knows the ADCS and registry names | 53 | Find them by name |
 | Cluster nodes | NTP server | 123 (UDP) | Correct time. Wrong time breaks NTLM logins and makes certificates look "not yet valid" or expired. |
-| The managing Argo CD | Internal Git server and Helm repository | 443 | If the cluster's own Argo CD reads Git |
-| The hub | The new cluster's API | 6443 | Only if the hub's Argo CD pushes to the cluster |
+| The cluster's Argo CD | Internal Git server and Helm repository | 443 | Read the files in this guide and the ADCS issuer chart |
 
 ---
 
@@ -109,6 +167,7 @@ Change the values to match your environment, then paste the block into your term
 step uses these variables.
 
 ```bash
+export CLUSTER=ocp-poc-01                                           # the cluster's folder name under cluster/overlays/
 export REGISTRY=registry.example.internal                           # mirror registry
 export CHART_REPO=https://charts.example.internal/repository/helm   # internal Helm repo
 export GIT_REPO=https://git.example.internal/platform/fleet.git
@@ -116,6 +175,8 @@ export ADCS_URL=https://adcs.example.internal/certsrv               # Active Dir
 export ADCS_TEMPLATE=OpenShiftWebServer                             # Active Directory team, item 2
 export CA_CHAIN=corporate-ca-chain.pem                              # item 4: root + issuing CA in one file
 export CATALOG=cs-redhat-operator-index                             # the mirrored catalog, see Check 2
+
+export APP=cluster/overlays/$CLUSTER/apps/cert-manager              # the app folder this guide creates
 ```
 
 **Check 1:** the CA file contains certificates and nothing else:
@@ -181,26 +242,36 @@ curl --ntlm -u 'EXAMPLE\svc-ocp-certs' -k -s -o /dev/null -w '%{http_code}\n' ht
 
 ---
 
-## Step 3: Install cert-manager
+## Step 3: cert-manager itself
 
-**What:** Red Hat's cert-manager operator, installed through Git from the **mirrored** catalog.
+**What:** the app folder, and in it the first part: Red Hat's cert-manager operator from the
+**mirrored** catalog.
 
-**Why:** cert-manager does all the work around certificates: keys, requests, renewal. It runs on
-every cluster, so its Application goes in `cluster/base/`.
+**Files you create in this step:**
 
-**Why its own namespace?** On OpenShift you can put operators in the shared namespace
-`openshift-operators`, or give each operator its own. This guide uses the operator's own
-namespace, `cert-manager-operator`, because:
+```
+apps/cert-manager/
+├── kustomization.yaml          ← lists cert-manager.yaml (more are added in later steps)
+├── cert-manager.yaml           ← Application, wave -3: "install ./operator"
+└── operator/
+    ├── kustomization.yaml
+    └── operator.yaml           ← Namespace, OperatorGroup, Subscription
+```
+
+**Why the namespace `cert-manager-operator`?** On OpenShift you can put operators in the shared
+namespace `openshift-operators`, or give each operator its own. This guide gives cert-manager its
+own, because:
 
 - it is the namespace the operator itself recommends,
-- with `installPlanApproval: Manual`, an approval covers all operators in the same namespace at
-  once. With one namespace per operator, you upgrade one operator at a time,
+- with `installPlanApproval: Manual`, one approval covers all operators in the same namespace. With
+  one namespace per operator, you upgrade one operator at a time,
 - removing or troubleshooting one operator does not touch the others.
 
 ```bash
-mkdir -p cluster/applications/cert-manager
+mkdir -p $APP/operator
 
-cat > cluster/applications/cert-manager/operator.yaml <<EOF
+# Content: what OLM needs to install the operator
+cat > $APP/operator/operator.yaml <<EOF
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -229,14 +300,15 @@ spec:
   installPlanApproval: Manual
 EOF
 
-cat > cluster/applications/cert-manager/kustomization.yaml <<'EOF'
+cat > $APP/operator/kustomization.yaml <<'EOF'
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - operator.yaml
 EOF
 
-cat > cluster/base/cert-manager.yaml <<EOF
+# Application: tells Argo CD to install ./operator, first of all (wave -3)
+cat > $APP/cert-manager.yaml <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -249,7 +321,7 @@ spec:
   source:
     repoURL: $GIT_REPO
     targetRevision: main
-    path: cluster/applications/cert-manager
+    path: $APP/operator
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:
@@ -258,13 +330,34 @@ spec:
     syncOptions:
       - ServerSideApply=true
 EOF
+
+# The app folder's list: only Application files
+cat > $APP/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cert-manager.yaml
+EOF
 ```
 
-Add `- cert-manager.yaml` to the list in `cluster/base/kustomization.yaml`. Commit, open a pull
-request and merge it.
+**Put the app on the cluster's list.** Open `cluster/overlays/$CLUSTER/kustomization.yaml` and add
+the folder under `resources:`:
 
-The installation waits for your approval, because of `installPlanApproval: Manual`. That way
-nothing is upgraded without you deciding it:
+```yaml
+resources:
+  - apps/cert-manager
+```
+
+**Check** before you commit: the cluster's list now contains the Application, and the Application's
+content renders:
+
+```bash
+oc kustomize cluster/overlays/$CLUSTER | grep -E '^  name: cert-manager$'
+oc kustomize $APP/operator | grep -E '^kind:'           # Namespace, OperatorGroup, Subscription
+```
+
+Commit, open a pull request and merge it. Then approve the installation (it waits for you because
+of `installPlanApproval: Manual`, so nothing is ever upgraded without you deciding it):
 
 ```bash
 oc -n cert-manager-operator get installplan
@@ -282,17 +375,26 @@ If a pod stays in `ImagePullBackOff`, the image mappings from Step 1, Check 3 ar
 
 ---
 
-## Step 4: Install the ADCS issuer
+## Step 4: The ADCS plug-in
 
-**What:** the plug-in that connects cert-manager to ADCS, installed from its Helm chart in your
-internal Helm repo, with its image from the mirror registry.
+**What:** the plug-in that connects cert-manager to ADCS, from its Helm chart in your internal Helm
+repo, with its image from the mirror registry.
 
-**How:** one Application file. It points at the chart, and all settings are written directly in
-the file under `helm.valuesObject`. The image is pulled straight from the mirror registry by its
-full name, so it does not depend on image mappings.
+**Files you create in this step:**
+
+```
+apps/cert-manager/
+├── kustomization.yaml          ← + adcs-issuer.yaml
+└── adcs-issuer.yaml            ← Application, wave -2: "install the adcs-issuer Helm chart"
+```
+
+**Why no subfolder?** The plug-in is delivered as a Helm chart, so the Application points straight
+at the chart in the Helm repo. Its settings (`helm.valuesObject`) are written directly in the
+Application file: the image comes from the mirror registry by its full name, so it does not need
+any image mappings.
 
 ```bash
-cat > cluster/base/adcs-issuer.yaml <<EOF
+cat > $APP/adcs-issuer.yaml <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -333,14 +435,20 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
 EOF
-```
 
-Add `- adcs-issuer.yaml` to the list in `cluster/base/kustomization.yaml`.
+cat > $APP/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cert-manager.yaml
+  - adcs-issuer.yaml
+EOF
+```
 
 **Check** before you commit (only your registry may appear):
 
 ```bash
-yq '.spec.source.helm.valuesObject' cluster/base/adcs-issuer.yaml > /tmp/adcs-values.yaml
+yq '.spec.source.helm.valuesObject' $APP/adcs-issuer.yaml > /tmp/adcs-values.yaml
 helm template adcs-issuer adcs-issuer --repo $CHART_REPO --version 2.2.2 -n adcs-issuer \
   -f /tmp/adcs-values.yaml | grep 'image:' | sort -u
 ```
@@ -360,13 +468,13 @@ pull secret has no login for it (`oc get secret pull-secret -n openshift-config`
 
 ---
 
-## Step 5: Give the ADCS issuer its login
+## Step 5: Give the plug-in its ADCS login
 
 **What:** a Secret with the service account's username and password.
 
-**Why by hand:** a password never goes into Git. The Secret must be in the `adcs-issuer` namespace,
-because that is where the plug-in looks for it. (When a secret store such as OpenBao is in place,
-this Secret can come from there instead, under the same name.)
+**Why by hand, and not in the folder:** a password never goes into Git. The Secret must be in the
+`adcs-issuer` namespace, because that is where the plug-in looks for it. (When a secret store such
+as OpenBao is in place, this Secret can come from there instead, under the same name.)
 
 ```bash
 read -rsp 'Password for the ADCS service account: ' PW; echo
@@ -388,21 +496,32 @@ It shows `["password","username"]`.
 
 ---
 
-## Step 6: Connect to ADCS
+## Step 6: The connection to ADCS
 
 **What:** a `ClusterAdcsIssuer` named `adcs`. It tells the plug-in where ADCS is, which template
 to use and which login to use. "Cluster" means every namespace on the cluster can use it.
 
+**Files you create in this step:**
+
+```
+apps/cert-manager/
+├── kustomization.yaml          ← + adcs-issuer-config.yaml
+├── adcs-issuer-config.yaml     ← Application, wave -1: "install ./adcs"
+└── adcs/
+    ├── kustomization.yaml
+    └── clusteradcsissuer.yaml  ← URL, template, login, CA
+```
+
+**Why wave -1:** the `ClusterAdcsIssuer` type is created by the plug-in (Step 4, wave -2), so this
+must come after it.
+
 **Why `caBundle`:** the plug-in talks HTTPS to the Web Enrollment site and must trust its
 certificate. `caBundle` is the CA chain from Step 1, base64-encoded.
 
-**How:** a plain YAML file in its own folder, and an Application that points at it. It comes in
-the wave after the plug-in (Step 4), because the plug-in installs the `ClusterAdcsIssuer` type.
-
 ```bash
-mkdir -p cluster/applications/adcs-issuer-config
+mkdir -p $APP/adcs
 
-cat > cluster/applications/adcs-issuer-config/clusteradcsissuer.yaml <<EOF
+cat > $APP/adcs/clusteradcsissuer.yaml <<EOF
 apiVersion: adcs.certmanager.csf.nokia.com/v1
 kind: ClusterAdcsIssuer
 metadata:
@@ -417,14 +536,14 @@ spec:
   retryInterval: 5m
 EOF
 
-cat > cluster/applications/adcs-issuer-config/kustomization.yaml <<'EOF'
+cat > $APP/adcs/kustomization.yaml <<'EOF'
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - clusteradcsissuer.yaml
 EOF
 
-cat > cluster/base/adcs-issuer-config.yaml <<EOF
+cat > $APP/adcs-issuer-config.yaml <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -438,7 +557,7 @@ spec:
   source:
     repoURL: $GIT_REPO
     targetRevision: main
-    path: cluster/applications/adcs-issuer-config
+    path: $APP/adcs
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:
@@ -447,10 +566,18 @@ spec:
     syncOptions:
       - ServerSideApply=true
 EOF
+
+cat > $APP/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cert-manager.yaml
+  - adcs-issuer.yaml
+  - adcs-issuer-config.yaml
+EOF
 ```
 
-Add `- adcs-issuer-config.yaml` to the list in `cluster/base/kustomization.yaml`. Commit, open a
-pull request and merge it.
+Commit, open a pull request and merge it.
 
 **Check:**
 
@@ -466,7 +593,8 @@ only talks to ADCS when a certificate is requested, so the real test is Step 7.
 
 ## Step 7: Test with a certificate
 
-**What:** ask for one real certificate in a test namespace, look at it, then remove it.
+**What:** ask for one real certificate in a test namespace, look at it, then remove it. This test
+is done by hand and is **not** put in Git.
 
 **Why:** this proves the whole chain (cert-manager → plug-in → ADCS → back) before any
 application depends on it.
@@ -524,7 +652,148 @@ rules require that.
 
 ---
 
-## Step 8: Use it in your applications
+## Step 8: Make the cluster trust the company CA
+
+**What:** make sure the company CA is in the cluster's list of trusted CAs.
+
+**Why:** the certificates are now signed by your company CA. Components inside the cluster (the
+OAuth server, image pulls, and anything that reads the injected trust bundle, for example the
+OpenBao guide) must trust that CA, or they fail with `x509: certificate signed by unknown authority`.
+
+> **Easiest for new clusters:** add the company CA to `additionalTrustBundle` in the cluster's
+> `install-config.yaml`, next to the mirror registry's CA, when RHACM creates the cluster. Then it
+> is trusted from the first boot and this step is only a check.
+
+**On a disconnected cluster this list already exists.** The installer created it with the mirror
+registry's CA, so the cluster can pull images. Never replace it: **add** the company CA to it.
+
+```bash
+BUNDLE=$(oc get proxy cluster -o jsonpath='{.spec.trustedCA.name}'); echo "$BUNDLE"   # usually user-ca-bundle
+oc -n openshift-config get configmap $BUNDLE -o jsonpath='{.data.ca-bundle\.crt}' > current-bundle.pem
+grep -c 'BEGIN CERTIFICATE' current-bundle.pem                                       # the CAs trusted today
+```
+
+Is the company CA already in it? Compare the subjects:
+
+```bash
+openssl crl2pkcs7 -nocrl -certfile current-bundle.pem | openssl pkcs7 -print_certs -noout | grep subject
+openssl crl2pkcs7 -nocrl -certfile $CA_CHAIN          | openssl pkcs7 -print_certs -noout | grep subject
+```
+
+If every subject from `$CA_CHAIN` is already in the first list, you are done: skip the rest of
+this step. Otherwise put the **combined** bundle in the app folder, under the **same name**, so it
+is managed from Git from now on.
+
+**Files you create in this step:**
+
+```
+apps/cert-manager/
+├── kustomization.yaml          ← + cluster-trust.yaml
+├── cluster-trust.yaml          ← Application, wave -2: "install ./trust"
+└── trust/
+    ├── kustomization.yaml
+    └── trusted-ca-bundle.yaml  ← the mirror registry's CA + the company CA
+```
+
+```bash
+mkdir -p $APP/trust
+
+cat current-bundle.pem $CA_CHAIN > combined-bundle.pem
+oc create configmap $BUNDLE -n openshift-config --from-file=ca-bundle.crt=combined-bundle.pem \
+  --dry-run=client -o yaml > $APP/trust/trusted-ca-bundle.yaml
+rm current-bundle.pem combined-bundle.pem
+
+cat > $APP/trust/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - trusted-ca-bundle.yaml
+EOF
+
+cat > $APP/cluster-trust.yaml <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-trust
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: $GIT_REPO
+    targetRevision: main
+    path: $APP/trust
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      # Never delete the trust bundle: without it the cluster cannot pull images
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+EOF
+
+cat > $APP/kustomization.yaml <<'EOF'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cert-manager.yaml
+  - adcs-issuer.yaml
+  - adcs-issuer-config.yaml
+  - cluster-trust.yaml
+EOF
+```
+
+**Check** before you commit: the mirror registry's CA **and** the company CA are both in the new
+file (the number is the sum of the two lists above):
+
+```bash
+grep -c 'BEGIN CERTIFICATE' $APP/trust/trusted-ca-bundle.yaml
+```
+
+Commit, open a pull request and merge it.
+
+> A change to the trust bundle rolls through the nodes one by one, like a small upgrade. Do it in
+> a maintenance window.
+
+**Check** (after the nodes have updated, `oc get mcp` shows `UPDATED True`):
+
+```bash
+oc -n openshift-config get configmap $BUNDLE -o jsonpath='{.data.ca-bundle\.crt}' | grep -c 'BEGIN CERTIFICATE'
+```
+
+The number matches the file in Git, and images can still be pulled.
+
+---
+
+## Done: what you have built
+
+```
+cluster/overlays/<cluster>/
+├── kustomization.yaml              ← resources: [apps/cert-manager]
+└── apps/cert-manager/
+    ├── kustomization.yaml          ← the four Application files
+    ├── cert-manager.yaml           (wave -3) → operator/
+    ├── operator/operator.yaml          Namespace, OperatorGroup, Subscription (mirrored catalog)
+    ├── adcs-issuer.yaml            (wave -2) → Helm chart adcs-issuer 2.2.2, image from the mirror
+    ├── cluster-trust.yaml          (wave -2) → trust/
+    ├── trust/trusted-ca-bundle.yaml    mirror registry CA + company CA
+    ├── adcs-issuer-config.yaml     (wave -1) → adcs/
+    └── adcs/clusteradcsissuer.yaml     URL, template, login, CA
+```
+
+Plus one Secret created by hand: `adcs-issuer-credentials` in `adcs-issuer`.
+
+**Another cluster?** Copy `apps/cert-manager/` to that cluster's folder, add it to its
+`kustomization.yaml`, and change what differs in that network (`$REGISTRY`, `$CATALOG`,
+`$ADCS_URL`, the trust bundle, and the paths that contain the cluster name). Then create its login
+Secret (Step 5).
+
+---
+
+## Use it in your applications
 
 Every certificate is a small file next to the application in Git. Only `issuerRef` points to ADCS:
 
@@ -557,117 +826,23 @@ Good to know:
 
 ---
 
-## Step 9: Make the cluster trust the company CA
-
-**What:** make sure the company CA is in the cluster's list of trusted CAs.
-
-**Why:** the certificates are now signed by your company CA. Components inside the cluster (the
-OAuth server, image pulls, and anything that reads the injected trust bundle, for example the
-OpenBao guide) must trust that CA, or they fail with `x509: certificate signed by unknown authority`.
-
-> **Easiest for new clusters:** add the company CA to `additionalTrustBundle` in the cluster's
-> `install-config.yaml`, next to the mirror registry's CA, when RHACM creates the cluster. Then it
-> is trusted from the first boot and this step is only a check.
-
-**On a disconnected cluster this list already exists.** The installer created it with the mirror
-registry's CA, so the cluster can pull images. Never replace it: **add** the company CA to it.
-
-```bash
-BUNDLE=$(oc get proxy cluster -o jsonpath='{.spec.trustedCA.name}'); echo "$BUNDLE"   # usually user-ca-bundle
-oc -n openshift-config get configmap $BUNDLE -o jsonpath='{.data.ca-bundle\.crt}' > current-bundle.pem
-grep -c 'BEGIN CERTIFICATE' current-bundle.pem                                       # the CAs trusted today
-```
-
-Is the company CA already in it? Compare the subjects:
-
-```bash
-openssl crl2pkcs7 -nocrl -certfile current-bundle.pem | openssl pkcs7 -print_certs -noout | grep subject
-openssl crl2pkcs7 -nocrl -certfile $CA_CHAIN          | openssl pkcs7 -print_certs -noout | grep subject
-```
-
-If every subject from `$CA_CHAIN` is already in the first list, you are done. Otherwise, put the
-**combined** bundle in Git, under the **same name**, so it is managed from now on:
-
-```bash
-mkdir -p cluster/applications/cluster-trust
-
-cat current-bundle.pem $CA_CHAIN > combined-bundle.pem
-oc create configmap $BUNDLE -n openshift-config --from-file=ca-bundle.crt=combined-bundle.pem \
-  --dry-run=client -o yaml > cluster/applications/cluster-trust/trusted-ca-bundle.yaml
-rm current-bundle.pem combined-bundle.pem
-
-cat > cluster/applications/cluster-trust/kustomization.yaml <<'EOF'
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - trusted-ca-bundle.yaml
-EOF
-
-cat > cluster/base/cluster-trust.yaml <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: cluster-trust
-  namespace: openshift-gitops
-  annotations:
-    argocd.argoproj.io/sync-wave: "-2"
-spec:
-  project: default
-  source:
-    repoURL: $GIT_REPO
-    targetRevision: main
-    path: cluster/applications/cluster-trust
-  destination:
-    server: https://kubernetes.default.svc
-  syncPolicy:
-    automated:
-      # Never delete the trust bundle: without it the cluster cannot pull images
-      prune: false
-      selfHeal: true
-    syncOptions:
-      - ServerSideApply=true
-EOF
-```
-
-Check that the mirror registry's CA **and** the company CA are both in the new file before you
-commit:
-
-```bash
-grep -c 'BEGIN CERTIFICATE' cluster/applications/cluster-trust/trusted-ca-bundle.yaml
-```
-
-Add `- cluster-trust.yaml` to `cluster/base/kustomization.yaml`. Commit, open a pull request and
-merge it.
-
-> A change to the trust bundle rolls through the nodes one by one, like a small upgrade. Do it in
-> a maintenance window.
-
-**Check** (after the nodes have updated, `oc get mcp` shows `UPDATED True`):
-
-```bash
-oc -n openshift-config get configmap $BUNDLE -o jsonpath='{.data.ca-bundle\.crt}' | grep -c 'BEGIN CERTIFICATE'
-```
-
-The number matches the file in Git, and images can still be pulled (`oc get pods -A | grep -c ImagePull`
-shows 0).
-
----
-
 ## If something does not work
 
 | What you see | What it means | What to do |
 |---|---|---|
+| Nothing happens on the cluster after the merge | The app is not on the cluster's list, or the cluster's Argo CD reads another folder | `oc kustomize cluster/overlays/$CLUSTER` must show the Application. Check "Before you start". |
 | Subscription shows no install plan, or `no operators found` | The catalog in `source:` does not have the operator | Step 1, Check 2: use the mirrored catalog's name, and ask for the operator to be mirrored |
 | Operator or cert-manager pods in `ImagePullBackOff` | The cluster tries to pull from the internet | Step 1, Check 3: the `ImageDigestMirrorSet` from `oc-mirror` is missing |
 | ADCS issuer pod in `ImagePullBackOff` | Image not in the mirror registry, or no login for it | Check the image name in Step 4 and the cluster's pull secret |
+| `adcs-issuer-config` stuck, `ClusterAdcsIssuer` type unknown | The plug-in (wave -2) is not healthy yet | Fix Step 4 first. Waves always wait for the previous one. |
 | Plug-in log: `i/o timeout` or `no route to host` | The firewall blocks the cluster from ADCS | Step 2 and the network table |
 | Plug-in log: `no such host` | The cluster's DNS cannot resolve the ADCS name | Step 2 and the network table |
 | `certificate is not yet valid`, or NTLM logins fail although the password is right | The cluster's clock is wrong | Step 2: check `chronyc tracking`. The cluster needs an internal NTP server. |
-| No `AdcsRequest` is created at all | The plug-in is not running, or the `issuerRef` is wrong | `oc -n adcs-issuer get pods`, and check group, kind and name in `issuerRef` (Step 8) |
+| No `AdcsRequest` is created at all | The plug-in is not running, or the `issuerRef` is wrong | `oc -n adcs-issuer get pods`, and check group, kind and name in `issuerRef` |
 | `CertificateRequest` shows `APPROVED` empty | cert-manager has not approved it | The chart gives cert-manager the right to approve ADCS requests. Check that cert-manager runs in the namespace `cert-manager` with the service account `cert-manager`. |
 | `AdcsRequest` stays `pending` | ADCS waits for a manager to approve the request, or the plug-in cannot reach ADCS | Read the plug-in log. If ADCS is waiting for approval, ask the ADCS team, or ask them to remove manual approval from the template. |
 | `AdcsRequest` is `rejected` or `errored` | ADCS refused the request, or the call failed | Usually the template: it does not allow names in the request, the key size is too small, or the account lacks *Enroll*. The message is in `oc describe adcsrequest`. |
 | `401` in the plug-in log | Wrong login | Fix the Secret from Step 5 (username format `DOMAIN\user`). |
 | `x509: certificate signed by unknown authority` in the plug-in log | `caBundle` does not contain the CA of the ADCS web server | Ask the ADCS team which CA signed the Web Enrollment site, and add it to `$CA_CHAIN`. |
-| Images stop pulling after Step 9 | The new trust bundle lost the mirror registry's CA | Put the registry CA back into `trusted-ca-bundle.yaml`, or revert the pull request |
+| Images stop pulling after Step 8 | The new trust bundle lost the mirror registry's CA | Put the registry CA back into `trust/trusted-ca-bundle.yaml`, or revert the pull request |
 | A certificate is valid for a shorter or longer time than you asked for | The template decides the validity | Expected. Change the template in ADCS if needed. |
