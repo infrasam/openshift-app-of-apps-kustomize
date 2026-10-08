@@ -1,0 +1,24 @@
+# Hub-only: hands the policy addons to managed clusters (see applications/governance/).
+# Production equivalent: nothing to install. Governance is built into RHACM.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: governance
+  namespace: openshift-gitops
+  annotations:
+    # After ocm-hub (0): needs the addon API
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/governance
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

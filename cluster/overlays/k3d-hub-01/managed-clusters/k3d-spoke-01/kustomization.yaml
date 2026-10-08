@@ -9,6 +9,7 @@ resources:
   - cni.yaml
   - olm.yaml
   - managedcluster.yaml
+  - governance-addons.yaml
   - import-rbac.yaml
 configMapGenerator:
   - name: cni-kindnet

@@ -1,0 +1,15 @@
+# Turns on policies for this cluster: the hub installs the policy agents on it.
+# Production equivalent: KlusterletAddonConfig with policyController.enabled: true.
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ManagedClusterAddOn
+metadata:
+  name: governance-policy-framework
+  namespace: k3d-spoke-01
+spec: {}
+---
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ManagedClusterAddOn
+metadata:
+  name: config-policy-controller
+  namespace: k3d-spoke-01
+spec: {}

@@ -1,0 +1,31 @@
+# The two policy addons, registered on the hub. A managed cluster gets them by enabling them
+# (managed-clusters/<cluster>/governance-addons.yaml). Same objects as `clusteradm install
+# hub-addon --names governance-policy-framework` creates.
+# Production equivalent: built into RHACM (KlusterletAddonConfig: policyController).
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ClusterManagementAddOn
+metadata:
+  name: governance-policy-framework
+  annotations:
+    addon.open-cluster-management.io/lifecycle: addon-manager
+spec:
+  addOnMeta:
+    displayName: Governance Policy Framework Addon
+    description: Distributes policies and collects policy evaluation results.
+  supportedConfigs:
+    - group: addon.open-cluster-management.io
+      resource: addondeploymentconfigs
+---
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ClusterManagementAddOn
+metadata:
+  name: config-policy-controller
+  annotations:
+    addon.open-cluster-management.io/lifecycle: addon-manager
+spec:
+  addOnMeta:
+    displayName: Configuration Policy Addon
+    description: Audits Kubernetes resources and remediates violations based on configuration policies.
+  supportedConfigs:
+    - group: addon.open-cluster-management.io
+      resource: addondeploymentconfigs

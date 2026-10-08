@@ -1,0 +1,33 @@
+# Hub-only: the policy engine on the hub (ACM upstream). Brings the Policy, PlacementBinding,
+# PolicySet and PolicyAutomation types, and copies each Policy to the namespaces of the clusters
+# its Placement selects.
+# Production equivalent: nothing to install. Governance is built into RHACM.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: governance-propagator
+  namespace: openshift-gitops
+  annotations:
+    # After ocm-hub (0): needs the Placement API
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://open-cluster-management.io/helm-charts
+    chart: governance-policy-propagator
+    targetRevision: 0.20.1
+    helm:
+      releaseName: governance-policy-propagator
+      valuesObject:
+        args:
+          # Placement only: the old PlacementRule API is not installed
+          disablePlacementRule: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: open-cluster-management
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
