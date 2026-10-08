@@ -10,6 +10,8 @@ metadata:
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
   labels:
     cni: kindnet
+    # Gets OLM at creation (olm.yaml), like OpenShift has it built in
+    olm: "true"
 spec:
   clusterNetwork:
     pods:
