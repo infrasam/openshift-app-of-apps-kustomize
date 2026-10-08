@@ -7,6 +7,7 @@ resources:
   - cluster.yaml
   - controlplane.yaml
   - cni.yaml
+  - olm.yaml
   - managedcluster.yaml
   - import-rbac.yaml
 configMapGenerator:
@@ -14,5 +15,18 @@ configMapGenerator:
     namespace: k3d-spoke-01
     files:
       - cni/kindnet.yaml
+  # OLM in three ConfigMaps (max 1 MiB each), applied in order by olm.yaml
+  - name: olm-crd-clusterserviceversions
+    namespace: k3d-spoke-01
+    files:
+      - olm/crd-clusterserviceversions.yaml
+  - name: olm-crds
+    namespace: k3d-spoke-01
+    files:
+      - olm/crds.yaml
+  - name: olm
+    namespace: k3d-spoke-01
+    files:
+      - olm/olm.yaml
 generatorOptions:
   disableNameSuffixHash: true

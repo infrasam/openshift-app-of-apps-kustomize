@@ -1,0 +1,27 @@
+# LAB: installs OLM (the operator installer) into the new cluster once, right after it is
+# created, so the spoke can install operators from Subscriptions like any OpenShift cluster.
+# Production equivalent: nothing to do. OLM is built into OpenShift.
+#
+# The files in olm/ are OLM v0.46.0 rendered once from the same chart and values the hub uses
+# (applications: olm), split in three because a ConfigMap may hold at most 1 MiB:
+#   helm template olm deploy/chart -f deploy/upstream/values.yaml -f <values> --include-crds
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: olm
+  namespace: k3d-spoke-01
+spec:
+  # Day-0, like the CNI: apply once at creation
+  strategy: ApplyOnce
+  # Every Cluster in this namespace carrying the label (see cluster.yaml)
+  clusterSelector:
+    matchLabels:
+      olm: "true"
+  # Applied in this order: the CRDs before the objects that use them
+  resources:
+    - kind: ConfigMap
+      name: olm-crd-clusterserviceversions
+    - kind: ConfigMap
+      name: olm-crds
+    - kind: ConfigMap
+      name: olm
