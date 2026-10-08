@@ -1,0 +1,357 @@
+# Governance addon controller v0.20.1: hands the policy addons (governance-policy-framework,
+# config-policy-controller) to the managed clusters that enable them. Rendered once from
+# github.com/open-cluster-management-io/governance-policy-addon-controller config/default at
+# v0.20.1, with every image pinned to v0.20.1 and without its Namespace (owned by ocm-hub).
+# Production equivalent: nothing to install. Governance is built into RHACM.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: governance-policy-addon-controller
+  name: governance-policy-addon-controller
+  namespace: open-cluster-management
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app: governance-policy-addon-controller
+  name: governance-policy-addon-controller-leader-election
+  namespace: open-cluster-management
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app: governance-policy-addon-controller
+  name: governance-policy-addon-controller
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resourceNames:
+      - policy-encryption-key
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - addon.open-cluster-management.io
+    resources:
+      - addondeploymentconfigs
+      - clustermanagementaddons
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - addon.open-cluster-management.io
+    resourceNames:
+      - config-policy-controller
+      - governance-policy-framework
+      - governance-standalone-hub-templating
+    resources:
+      - clustermanagementaddons/finalizers
+      - managedclusteraddons/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - addon.open-cluster-management.io
+    resourceNames:
+      - config-policy-controller
+      - governance-policy-framework
+      - governance-standalone-hub-templating
+    resources:
+      - clustermanagementaddons/status
+      - managedclusteraddons/status
+    verbs:
+      - patch
+      - update
+  - apiGroups:
+      - addon.open-cluster-management.io
+    resources:
+      - managedclusteraddons
+    verbs:
+      - create
+      - get
+      - list
+      - update
+      - watch
+  - apiGroups:
+      - addon.open-cluster-management.io
+    resourceNames:
+      - config-policy-controller
+      - governance-policy-framework
+      - governance-standalone-hub-templating
+    resources:
+      - managedclusteraddons
+    verbs:
+      - delete
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
+      - get
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - certificatesigningrequests
+      - certificatesigningrequests/approval
+    verbs:
+      - create
+      - get
+      - list
+      - update
+      - watch
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - signers
+    verbs:
+      - approve
+  - apiGroups:
+      - cluster.open-cluster-management.io
+    resourceNames:
+      - id.k8s.io
+    resources:
+      - clusterclaims
+    verbs:
+      - get
+  - apiGroups:
+      - cluster.open-cluster-management.io
+    resources:
+      - managedclusters
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - infrastructures
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+  - apiGroups:
+      - coordination.k8s.io
+    resourceNames:
+      - config-policy-controller
+      - governance-policy-framework
+      - governance-standalone-hub-templating
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - policy.open-cluster-management.io
+    resources:
+      - policies
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - policy.open-cluster-management.io
+    resources:
+      - policies/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - policy.open-cluster-management.io
+    resources:
+      - policies/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - open-cluster-management:governance-standalone-hub-templating
+    resources:
+      - clusterrolebindings
+    verbs:
+      - delete
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterrolebindings
+      - clusterroles
+      - rolebindings
+    verbs:
+      - create
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - open-cluster-management:config-policy-controller-hub
+      - open-cluster-management:governance-standalone-hub-templating
+      - open-cluster-management:policy-framework-hub
+    resources:
+      - clusterroles
+      - rolebindings
+    verbs:
+      - delete
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - work.open-cluster-management.io
+    resources:
+      - manifestworks
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app: governance-policy-addon-controller
+  name: governance-policy-addon-controller-leader-election
+  namespace: open-cluster-management
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: governance-policy-addon-controller-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: governance-policy-addon-controller
+    namespace: open-cluster-management
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: governance-policy-addon-controller
+  name: governance-policy-addon-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: governance-policy-addon-controller
+subjects:
+  - kind: ServiceAccount
+    name: governance-policy-addon-controller
+    namespace: open-cluster-management
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: governance-policy-addon-controller
+    control-plane: controller-manager
+  name: governance-policy-addon-controller
+  namespace: open-cluster-management
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: governance-policy-addon-controller
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app: governance-policy-addon-controller
+        control-plane: controller-manager
+    spec:
+      containers:
+        - command:
+            - governance-policy-addon-controller
+          env:
+            - name: CONFIG_POLICY_CONTROLLER_IMAGE
+              value: quay.io/open-cluster-management/config-policy-controller:v0.20.1
+            - name: GOVERNANCE_POLICY_FRAMEWORK_ADDON_IMAGE
+              value: quay.io/open-cluster-management/governance-policy-framework-addon:v0.20.1
+          image: quay.io/open-cluster-management/governance-policy-addon-controller:v0.20.1
+          imagePullPolicy: IfNotPresent
+          name: manager
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /tmp
+              name: serving-cert
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: governance-policy-addon-controller
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - emptyDir: {}
+          name: serving-cert

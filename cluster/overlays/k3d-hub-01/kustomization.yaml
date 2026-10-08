@@ -5,6 +5,8 @@ kind: Kustomization
 resources:
   - ../../base
   - ocm-hub.yaml
+  - governance-propagator.yaml
+  - governance.yaml
   - capi.yaml
   - spoke-provisioning.yaml
   - openbao-config.yaml
