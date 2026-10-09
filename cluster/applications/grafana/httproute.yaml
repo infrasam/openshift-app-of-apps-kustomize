@@ -1,0 +1,17 @@
+# Grafana UI through the cluster Gateway (OpenShift: a Route).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana
+  namespace: grafana
+spec:
+  parentRefs:
+    - name: apps
+      namespace: openshift-ingress
+      sectionName: https
+  hostnames:
+    - grafana.apps.hub.172.19.0.3.nip.io
+  rules:
+    - backendRefs:
+        - name: grafana-service
+          port: 3000

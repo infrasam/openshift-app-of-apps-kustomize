@@ -1,0 +1,25 @@
+# Hub-only: prometheus-operator, installed by OLM (see applications/prometheus-operator/).
+# Needed for ThanosRuler and Alertmanager in alerting.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-operator
+  namespace: openshift-gitops
+  annotations:
+    # Beside thanos (5): the alerting that uses it comes in wave 6
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/prometheus-operator
+  destination:
+    # The Subscription sets its own namespace (operators)
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

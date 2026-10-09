@@ -1,0 +1,34 @@
+# The Grafana instance. The operator creates the Deployment, the Service "grafana-service"
+# and a random admin password in the Secret "grafana-admin-credentials" (never in Git).
+# Production: log in through the company's identity provider (OIDC) instead.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: grafana
+  labels:
+    # Data sources and dashboards pick this instance by this label
+    grafana: hub
+spec:
+  config:
+    log:
+      mode: console
+    server:
+      root_url: https://grafana.apps.hub.172.19.0.3.nip.io
+    # No usage statistics or update checks to the internet (disconnected in production)
+    analytics:
+      reporting_enabled: "false"
+      check_for_updates: "false"
+      check_for_plugin_updates: "false"
+  deployment:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: grafana
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 128Mi
+                limits:
+                  memory: 384Mi

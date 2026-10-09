@@ -1,0 +1,40 @@
+# Alertmanager: receives firing alerts from Thanos Ruler, groups them and sends them on.
+# The operator creates the StatefulSet and the Service "alertmanager-operated" (port 9093).
+apiVersion: monitoring.coreos.com/v1
+kind: Alertmanager
+metadata:
+  name: hub
+  namespace: thanos
+spec:
+  replicas: 1
+  # The routing below applies to every alert, not only alerts from this namespace
+  alertmanagerConfiguration:
+    name: hub
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
+---
+# Where alerts go. Lab: nowhere yet, they are only shown in Alertmanager and Grafana.
+# Production: e-mail, a webhook to the on-call tool or a chat channel, as receivers below.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: hub
+  namespace: thanos
+spec:
+  route:
+    receiver: default
+    # One notification per cluster and alert, not one per pod
+    groupBy: [cluster, alertname]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+  receivers:
+    - name: default

@@ -1,0 +1,136 @@
+# "Fleet overview": one dashboard for every cluster, with a cluster picker at the top.
+# The dashboard is plain Grafana JSON; edit it in the UI, export it and paste it back here.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: fleet-overview
+  namespace: grafana
+spec:
+  instanceSelector:
+    matchLabels:
+      grafana: hub
+  json: |
+    {
+      "title": "Fleet overview",
+      "uid": "fleet-overview",
+      "schemaVersion": 39,
+      "refresh": "1m",
+      "time": { "from": "now-3h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "thanos" },
+            "query": { "query": "label_values(up, cluster)", "refId": "cluster" },
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "title": "Clusters sending metrics",
+          "type": "stat",
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "targets": [ { "refId": "A", "expr": "count(count by (cluster) (up))" } ]
+        },
+        {
+          "title": "Targets down",
+          "type": "stat",
+          "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+            }
+          },
+          "targets": [ { "refId": "A", "expr": "count(up{cluster=~\"$cluster\"} == 0) or vector(0)" } ]
+        },
+        {
+          "title": "Pods not running",
+          "type": "stat",
+          "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] }
+            }
+          },
+          "targets": [ { "refId": "A", "expr": "sum(kube_pod_status_phase{cluster=~\"$cluster\", phase=~\"Pending|Failed|Unknown\"}) or vector(0)" } ]
+        },
+        {
+          "title": "Firing alerts",
+          "type": "stat",
+          "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+            }
+          },
+          "targets": [ { "refId": "A", "expr": "count(ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\"}) or vector(0)" } ]
+        },
+        {
+          "title": "Node CPU used",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - avg by (cluster, instance) (rate(node_cpu_seconds_total{cluster=~\"$cluster\", mode=\"idle\"}[5m])))",
+              "legendFormat": "{{cluster}} / {{instance}}"
+            }
+          ]
+        },
+        {
+          "title": "Node memory used",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - node_memory_MemAvailable_bytes{cluster=~\"$cluster\"} / node_memory_MemTotal_bytes{cluster=~\"$cluster\"})",
+              "legendFormat": "{{cluster}} / {{instance}}"
+            }
+          ]
+        },
+        {
+          "title": "Container restarts (last hour)",
+          "type": "table",
+          "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (cluster, namespace, pod) (increase(kube_pod_container_status_restarts_total{cluster=~\"$cluster\"}[1h])) > 0",
+              "format": "table",
+              "instant": true
+            }
+          ],
+          "transformations": [ { "id": "organize", "options": { "excludeByName": { "Time": true } } } ]
+        },
+        {
+          "title": "API server requests per second",
+          "type": "timeseries",
+          "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+          "datasource": { "type": "prometheus", "uid": "thanos" },
+          "fieldConfig": { "defaults": { "unit": "reqps" } },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (cluster, code) (rate(apiserver_request_total{cluster=~\"$cluster\"}[5m]))",
+              "legendFormat": "{{cluster}} / {{code}}"
+            }
+          ]
+        }
+      ]
+    }

@@ -1,0 +1,25 @@
+# Hub-only: grafana-operator, installed by OLM (see applications/grafana-operator/).
+# The Grafana instance itself is grafana.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-operator
+  namespace: openshift-gitops
+  annotations:
+    # Before grafana (6), which needs the Grafana types
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/grafana-operator
+  destination:
+    # The Subscription sets its own namespace (operators)
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

@@ -41,8 +41,11 @@ spec:
             # Every pod behind the headless Services, found through DNS
             - --endpoint=dnssrv+_grpc._tcp.thanos-receive.thanos.svc.cluster.local
             - --endpoint=dnssrv+_grpc._tcp.thanos-store.thanos.svc.cluster.local
-            # Same series from several Receive replicas: show it once
+            # Thanos Ruler (applications/alerting/): makes the ALERTS series queryable
+            - --endpoint=dnssrv+_grpc._tcp.thanos-ruler-operated.thanos.svc.cluster.local
+            # Same series from several replicas: show it once
             - --query.replica-label=receive_replica
+            - --query.replica-label=thanos_ruler_replica
           ports:
             - name: grpc
               containerPort: 10901
