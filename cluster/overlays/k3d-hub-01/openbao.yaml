@@ -145,6 +145,21 @@ spec:
                       EOT
                     }
                   }
+                  # vault-config-operator: may only manage the managed clusters' own logins
+                  # (auth/spokes/<cluster>) and their ESO policies (eso-<cluster>)
+                  request "vault-config" {
+                    operation = "update"
+                    path      = "sys/policies/acl/vault-config"
+                    data = {
+                      policy = <<-EOT
+                        path "sys/auth"                 { capabilities = ["read"] }
+                        path "sys/auth/spokes/*"        { capabilities = ["create", "read", "update", "delete", "sudo"] }
+                        path "sys/mounts/auth/spokes/*" { capabilities = ["create", "read", "update"] }
+                        path "auth/spokes/*"            { capabilities = ["create", "read", "update", "delete", "list"] }
+                        path "sys/policies/acl/eso-*"   { capabilities = ["create", "read", "update", "delete", "list"] }
+                      EOT
+                    }
+                  }
                   # Administrators
                   request "admin" {
                     operation = "update"
@@ -167,6 +182,18 @@ spec:
                       bound_service_account_namespaces = ["external-secrets"]
                       token_policies                   = ["eso-k3d-hub-01"]
                       token_ttl                        = "1h"
+                    }
+                  }
+                  # vault-config-operator logs in with the ServiceAccount "vault-config" in each
+                  # managed cluster's namespace on the hub (labelled managed-cluster=true)
+                  request "vault-config" {
+                    operation = "update"
+                    path      = "auth/kubernetes/role/vault-config"
+                    data = {
+                      bound_service_account_names              = ["vault-config"]
+                      bound_service_account_namespace_selector = "{\"matchLabels\":{\"platform.example.internal/managed-cluster\":\"true\"}}"
+                      token_policies                           = ["vault-config"]
+                      token_ttl                                = "15m"
                     }
                   }
                   # Humans log in with a token for openbao-config/serviceaccount-admin.yaml.

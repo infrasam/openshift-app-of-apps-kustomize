@@ -1,0 +1,17 @@
+# Trick to get the lab CA into this namespace: a certificate from lab-ca always carries the CA
+# in its Secret (ca.crt). The operator reads only that file, to trust OpenBao's certificate.
+# Production: a ConfigMap with the corporate CA, or the cluster's injected trust bundle.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ca-trust
+  namespace: vault-config-operator
+spec:
+  secretName: vault-ca-trust
+  commonName: vault-config-operator
+  dnsNames:
+    - vault-config-operator.vault-config-operator.svc
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lab-ca

@@ -5,3 +5,4 @@ resources:
   - certificate.yaml
   - tlsroute.yaml
   - serviceaccount-admin.yaml
+  - namespace-reader.yaml
