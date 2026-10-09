@@ -1,0 +1,21 @@
+# ESO on k3d-spoke-01 (ServiceAccount openbao-auth in external-secrets) gets the policy above.
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: KubernetesAuthEngineRole
+metadata:
+  name: eso
+  namespace: k3d-spoke-01
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  path: spokes/k3d-spoke-01
+  targetServiceAccounts:
+    - openbao-auth
+  targetNamespaces:
+    targetNamespaces:
+      - external-secrets
+  policies:
+    - eso-k3d-spoke-01
+  tokenTTL: 3600

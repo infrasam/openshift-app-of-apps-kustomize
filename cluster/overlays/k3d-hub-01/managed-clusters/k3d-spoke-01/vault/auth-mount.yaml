@@ -1,0 +1,14 @@
+# This cluster's own login in OpenBao: auth/spokes/k3d-spoke-01
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: AuthEngineMount
+metadata:
+  name: k3d-spoke-01
+  namespace: k3d-spoke-01
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: kubernetes
+  path: spokes
