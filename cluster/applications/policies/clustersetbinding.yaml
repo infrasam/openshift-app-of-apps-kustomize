@@ -1,0 +1,10 @@
+# A Placement can only choose among the clusters of cluster sets bound to its namespace.
+# The spoke is in the "default" cluster set, so bind that set here.
+# Production: the same object in RHACM.
+apiVersion: cluster.open-cluster-management.io/v1beta2
+kind: ManagedClusterSetBinding
+metadata:
+  name: default
+  namespace: policies
+spec:
+  clusterSet: default

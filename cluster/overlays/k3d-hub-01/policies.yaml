@@ -1,0 +1,24 @@
+# Hub-only: the hub's policies for the fleet (see applications/policies/).
+# Production: the same Policies in RHACM.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: policies
+  namespace: openshift-gitops
+  annotations:
+    # After governance-propagator (1), which brings the Policy type
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/policies
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
