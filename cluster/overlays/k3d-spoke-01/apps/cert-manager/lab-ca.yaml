@@ -1,0 +1,31 @@
+# Application: the cluster's certificate issuer from ./ca, after cert-manager (wave -2).
+# Lab: a self-signed root CA. Production: the ADCS plug-in and its connection
+# (docs/openshift-cert-manager-adcs.md, steps 4-6).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-ca
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/overlays/k3d-spoke-01/apps/cert-manager/ca
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    # The cert-manager CRDs appear after OLM installs the operator: keep retrying
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

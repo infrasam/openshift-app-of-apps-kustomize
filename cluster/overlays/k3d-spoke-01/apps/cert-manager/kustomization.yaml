@@ -1,0 +1,7 @@
+# This folder is one app: cert-manager and the issuer that belongs to it.
+# Only the Application files are listed; each one installs its own subfolder.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cert-manager.yaml
+  - lab-ca.yaml

@@ -1,0 +1,8 @@
+# Only used once: to sign the lab root CA below (cert-manager "CA bootstrap" pattern).
+# Never reference this issuer from applications.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
