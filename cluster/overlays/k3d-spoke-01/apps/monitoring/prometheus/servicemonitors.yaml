@@ -1,0 +1,60 @@
+# What Prometheus scrapes. A ServiceMonitor points at a Service; the operator turns it
+# into scrape configuration. Add one here for each new thing to monitor.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: node-exporter
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-exporter
+  endpoints:
+    - port: metrics
+      interval: 30s
+      # Name the series after the node, not the pod
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: instance
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  endpoints:
+    - port: http-metrics
+      interval: 30s
+      # Keep the namespace/pod labels of the objects, not those of kube-state-metrics
+      honorLabels: true
+---
+# The Kubernetes API server (the "kubernetes" Service in "default")
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apiserver
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [default]
+  selector:
+    matchLabels:
+      component: apiserver
+      provider: kubernetes
+  endpoints:
+    - port: https
+      scheme: https
+      interval: 30s
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        serverName: kubernetes
+      # Drop the largest histograms: they cost much memory and few alerts use them
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: apiserver_request_(duration|sli_duration|body_size)_seconds_bucket|etcd_request_duration_seconds_bucket|apiserver_response_sizes_bucket
+          action: drop

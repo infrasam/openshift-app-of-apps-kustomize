@@ -1,0 +1,18 @@
+# prometheus-operator via OLM, the same way OpenShift installs operators from OperatorHub.
+# Lab: upstream package "prometheus" from operatorhubio-catalog (beta, v0.70.0).
+# Production: OpenShift's own monitoring stack already runs this operator (openshift-monitoring).
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: prometheus
+  # Watches all namespaces: "operators" already has a global OperatorGroup
+  # (production: openshift-operators)
+  namespace: operators
+spec:
+  name: prometheus
+  channel: beta
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: prometheusoperator.v0.70.0
+  # TODO(prod): Manual approval so upgrades are deliberate, not automatic
+  installPlanApproval: Automatic

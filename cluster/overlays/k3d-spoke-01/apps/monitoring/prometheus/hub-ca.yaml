@@ -1,0 +1,21 @@
+# The CA that signed the hub's Gateway certificate (the hub's lab root CA, public), so
+# Prometheus can trust https://thanos-receive.apps.hub.... Same CA as external-secrets/hub-ca.
+# Production: the corporate CA, usually already in the cluster's trust bundle.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hub-ca
+  namespace: monitoring
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIBmTCCAUCgAwIBAgIQbofYxnxlWYD3nLQUd9YTaTAKBggqhkjOPQQDAjAtMRUw
+    EwYDVQQKEwxpbmZyYXNhbSBsYWIxFDASBgNVBAMTC0xhYiBSb290IENBMB4XDTI2
+    MDkyOTE4MTA1OVoXDTM2MDkyNjE4MTA1OVowLTEVMBMGA1UEChMMaW5mcmFzYW0g
+    bGFiMRQwEgYDVQQDEwtMYWIgUm9vdCBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEH
+    A0IABJFsyeUQ+++B5pVfKsmrAf1+o8d5CR/8eijJtRWqUOVAz9Wq7l4y4cbUmXvk
+    CEcOq14soBbDP2oXq7WZDAvel1ejQjBAMA4GA1UdDwEB/wQEAwICpDAPBgNVHRMB
+    Af8EBTADAQH/MB0GA1UdDgQWBBTTf4GFQSFjkVX/kh+xjSLwW6nmJjAKBggqhkjO
+    PQQDAgNHADBEAiBm/IyzEhCl7xNfEDRHBRLeB0CG87Nw5O6/Df0/0cw2qwIgTZ/d
+    J9AJjohbGZn3+km6TfQuPmaTyZN7tOGrRfuOapU=
+    -----END CERTIFICATE-----

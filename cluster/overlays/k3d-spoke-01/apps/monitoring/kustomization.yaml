@@ -1,0 +1,11 @@
+# This folder is one app: metrics for this cluster, sent to the hub's Thanos.
+# Only the Application files are listed; each one installs its own subfolder.
+#
+# Production (OpenShift + RHACM): none of this is needed. OpenShift ships its own
+# Prometheus in openshift-monitoring, and RHACM Observability (MultiClusterObservability
+# on the hub) adds a metrics-collector to every managed cluster that forwards to the hub.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - prometheus-operator.yaml
+  - prometheus.yaml

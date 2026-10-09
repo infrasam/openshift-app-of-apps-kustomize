@@ -1,0 +1,31 @@
+# Application: this cluster's Prometheus and what it scrapes (./prometheus).
+# It sends everything to the hub's Thanos Receive.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: openshift-gitops
+  annotations:
+    # After prometheus-operator (-3): needs the Prometheus and ServiceMonitor types
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/overlays/k3d-spoke-01/apps/monitoring/prometheus
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m
