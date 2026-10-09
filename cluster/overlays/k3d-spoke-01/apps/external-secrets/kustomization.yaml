@@ -1,0 +1,7 @@
+# This folder is one app: ESO and its connection to the hub's OpenBao.
+# Only the Application files are listed; each one installs its own part.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - external-secrets.yaml
+  - secret-store.yaml
