@@ -1,0 +1,35 @@
+# Hub-only: Thanos, the fleet's central metrics store (RHACM Observability runs the same
+# components on the hub). Plain YAML in applications/thanos/: there is no Thanos operator.
+#
+#   spoke Prometheus --remote_write (HTTPS)--> Receive --> S3 bucket "thanos" (seaweedfs.yaml)
+#   Query <-- Receive (recent data) + Store (older data in S3);  Compactor compacts S3
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: thanos
+  namespace: openshift-gitops
+  annotations:
+    # After seaweedfs (4): the bucket must exist before Receive uploads blocks
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/thanos
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: thanos
+  syncPolicy:
+    automated:
+      # Never prune automatically: Receive and Store keep data on their volumes
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,29 @@
+# Where Thanos keeps its blocks: the S3 bucket "thanos" in SeaweedFS.
+# The S3 login comes from OpenBao (the same keys as applications/object-storage/s3-config.yaml);
+# only the file around it is written here. Receive, Store and Compactor mount it.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: thanos-objstore
+  namespace: thanos
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: openbao
+  target:
+    name: thanos-objstore
+    template:
+      data:
+        objstore.yml: |
+          type: S3
+          config:
+            bucket: thanos
+            endpoint: seaweedfs-all-in-one.object-storage.svc:8333
+            # Lab: plain HTTP inside the cluster. Production: the S3 service's TLS endpoint.
+            insecure: true
+            access_key: "{{ .access_key }}"
+            secret_key: "{{ .secret_key }}"
+  dataFrom:
+    - extract:
+        key: clusters/k3d-hub-01/s3
