@@ -5,6 +5,9 @@ apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:
   name: k3d-spoke-01
+  labels:
+    # Gets its own Argo CD and root app from the hub's "gitops" policy (applications/policies/)
+    gitops: "true"
   annotations:
     # Never let Argo CD remove the registration (in ACM this can tear down the cluster)
     argocd.argoproj.io/sync-options: Prune=false,Delete=false

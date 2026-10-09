@@ -1,0 +1,5 @@
+# Where the hub's policies live (any namespace on the hub works; one place keeps it tidy).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: policies

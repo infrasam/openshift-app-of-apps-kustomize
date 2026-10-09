@@ -7,6 +7,7 @@ resources:
   - ocm-hub.yaml
   - governance-propagator.yaml
   - governance.yaml
+  - policies.yaml
   - capi.yaml
   - spoke-provisioning.yaml
   - openbao-config.yaml

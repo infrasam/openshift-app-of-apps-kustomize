@@ -1,0 +1,178 @@
+# Policy "gitops": every cluster labelled gitops=true gets its own Argo CD, and a root app that
+# reads the cluster's own folder in Git: cluster/overlays/<cluster name>/.
+# From then on the cluster installs its own apps; the hub only makes sure Argo CD is there.
+#
+#   Policy            WHAT must exist on the cluster (two ConfigurationPolicies, in order)
+#   Placement         WHERE: clusters with the label gitops=true
+#   PlacementBinding  connects the two
+#
+# Production: the same three objects in RHACM, with openshift-gitops-operator from the
+# (mirrored) Red Hat catalog instead of the community argocd-operator.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: gitops
+  namespace: policies
+  annotations:
+    policy.open-cluster-management.io/categories: CM Configuration Management
+    policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+spec:
+  # enforce: create or fix whatever is missing (inform would only report it)
+  remediationAction: enforce
+  disabled: false
+  policy-templates:
+    # 1. The Argo CD operator, installed by OLM on the cluster
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: gitops-operator
+        spec:
+          remediationAction: enforce
+          severity: high
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operators.coreos.com/v1alpha1
+                kind: Subscription
+                metadata:
+                  name: argocd-operator
+                  # AllNamespaces operator: "operators" has a global OperatorGroup
+                  namespace: operators
+                spec:
+                  name: argocd-operator
+                  channel: alpha
+                  source: operatorhubio-catalog
+                  sourceNamespace: olm
+                  startingCSV: argocd-operator.v0.19.0
+                  installPlanApproval: Automatic
+                  config:
+                    env:
+                      # Only our instance below, no default one
+                      - name: DISABLE_DEFAULT_ARGOCD_INSTANCE
+                        value: "true"
+                      # The instance in openshift-gitops may manage the whole cluster
+                      - name: ARGOCD_CLUSTER_CONFIG_NAMESPACES
+                        value: openshift-gitops
+
+    # 2. The Argo CD instance and the root app. Waits until the operator part is compliant.
+    - extraDependencies:
+        - apiVersion: policy.open-cluster-management.io/v1
+          kind: ConfigurationPolicy
+          name: gitops-operator
+          compliance: Compliant
+      objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: gitops-instance
+        spec:
+          remediationAction: enforce
+          severity: high
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: openshift-gitops
+            # Same instance settings as the hub (cluster/base/argocd.yaml)
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: argoproj.io/v1beta1
+                kind: ArgoCD
+                metadata:
+                  name: argocd
+                  namespace: openshift-gitops
+                spec:
+                  controller:
+                    extraCommandArgs:
+                      - --server-side-diff-enabled
+                  rbac:
+                    defaultPolicy: role:readonly
+                    policy: ""
+                    scopes: "[groups]"
+                  server:
+                    insecure: true
+                  resourceHealthChecks:
+                    # Required for sync waves between Applications (app of apps ordering)
+                    - group: argoproj.io
+                      kind: Application
+                      check: |
+                        hs = {}
+                        hs.status = "Progressing"
+                        hs.message = ""
+                        if obj.status ~= nil and obj.status.health ~= nil then
+                          hs.status = obj.status.health.status
+                          if obj.status.health.message ~= nil then
+                            hs.message = obj.status.health.message
+                          end
+                        end
+                        return hs
+            # Lets this Argo CD install anything on its own cluster (the hub does the same)
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: argocd-application-controller-cluster-admin
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: cluster-admin
+                subjects:
+                  - kind: ServiceAccount
+                    name: argocd-argocd-application-controller
+                    namespace: openshift-gitops
+            # The root app: reads THIS cluster's folder. {{hub ... hub}} is filled in by the
+            # hub with the cluster's name, so one policy serves every cluster.
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: argoproj.io/v1alpha1
+                kind: Application
+                metadata:
+                  name: root
+                  namespace: openshift-gitops
+                spec:
+                  project: default
+                  source:
+                    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+                    targetRevision: main
+                    path: 'cluster/overlays/{{hub .ManagedClusterName hub}}'
+                  destination:
+                    server: https://kubernetes.default.svc
+                  syncPolicy:
+                    automated:
+                      prune: true
+                      selfHeal: true
+                    syncOptions:
+                      - ServerSideApply=true
+---
+# WHERE: every cluster with the label gitops=true
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: gitops
+  namespace: policies
+spec:
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchLabels:
+            gitops: "true"
+---
+# Connects the policy to the placement
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: gitops
+  namespace: policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: gitops
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: gitops
