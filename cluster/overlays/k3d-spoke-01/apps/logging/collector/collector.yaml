@@ -1,0 +1,80 @@
+# The log collector: one pod per node (DaemonSet) that reads every container's log file
+# under /var/log/pods and sends it to the hub's Loki over OTLP/HTTPS.
+# The operator creates the DaemonSet, its ServiceAccount and its configuration.
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: logs
+  namespace: logging
+spec:
+  mode: daemonset
+  # The Kubernetes distribution of the collector (has the file_log receiver)
+  image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s:0.160.0
+  # The log files on the node belong to root
+  podSecurityContext:
+    runAsUser: 0
+    runAsGroup: 0
+  tolerations:
+    - operator: Exists
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  volumes:
+    - name: pod-logs
+      hostPath:
+        path: /var/log/pods
+    - name: hub-ca
+      configMap:
+        name: hub-ca
+  volumeMounts:
+    - name: pod-logs
+      mountPath: /var/log/pods
+      readOnly: true
+    - name: hub-ca
+      mountPath: /etc/hub-ca
+      readOnly: true
+  config:
+    receivers:
+      file_log:
+        include:
+          - /var/log/pods/*/*/*.log
+        # Not its own logs: every send would log a line, which would be sent again
+        exclude:
+          - /var/log/pods/logging_*/*/*.log
+        # Only new lines (production: file_storage to remember the position across restarts)
+        start_at: end
+        include_file_path: true
+        operators:
+          # Unwraps the container runtime's format and adds namespace, pod and container
+          # from the file path
+          - type: container
+            id: container-parser
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      resource:
+        attributes:
+          # Becomes the label k8s_cluster_name in Loki
+          - key: k8s.cluster.name
+            value: k3d-spoke-01
+            action: upsert
+      batch: {}
+    exporters:
+      otlp_http:
+        endpoint: https://loki.apps.hub.172.19.0.3.nip.io/otlp
+        headers:
+          # The Loki tenant every cluster writes to
+          X-Scope-OrgID: fleet
+        tls:
+          ca_file: /etc/hub-ca/ca.crt
+    service:
+      pipelines:
+        logs:
+          receivers: [file_log]
+          processors: [memory_limiter, resource, batch]
+          exporters: [otlp_http]

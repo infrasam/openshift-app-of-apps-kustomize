@@ -1,0 +1,24 @@
+# The spokes send their logs here, as OTLP (OpenTelemetry) over HTTPS.
+# The Gateway terminates TLS with the wildcard certificate from lab-ca, which the spokes
+# already trust (hub-ca). Lab: anyone who reaches it may write. Production: mTLS per cluster.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: loki-push
+  namespace: loki
+spec:
+  parentRefs:
+    - name: apps
+      namespace: openshift-ingress
+      sectionName: https
+  hostnames:
+    - loki.apps.hub.172.19.0.3.nip.io
+  rules:
+    - matches:
+        # Only the OTLP write endpoint is exposed, nothing else of Loki
+        - path:
+            type: Exact
+            value: /otlp/v1/logs
+      backendRefs:
+        - name: logs-distributor-http
+          port: 3100

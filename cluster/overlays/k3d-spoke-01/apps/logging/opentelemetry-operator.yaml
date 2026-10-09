@@ -1,0 +1,23 @@
+# Application: opentelemetry-operator, installed by OLM from ./operator.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opentelemetry-operator
+  namespace: openshift-gitops
+  annotations:
+    # After cert-manager (-3): the operator's webhook needs a certificate
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/overlays/k3d-spoke-01/apps/logging/operator
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

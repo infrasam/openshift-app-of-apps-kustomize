@@ -1,0 +1,30 @@
+# Application: the log collector on every node (./collector).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: log-collector
+  namespace: openshift-gitops
+  annotations:
+    # After opentelemetry-operator (-2): needs the OpenTelemetryCollector type
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/overlays/k3d-spoke-01/apps/logging/collector
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

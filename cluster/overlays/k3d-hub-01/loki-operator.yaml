@@ -1,0 +1,25 @@
+# Hub-only: loki-operator, installed by OLM (see applications/loki-operator/).
+# The log store itself is loki.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-operator
+  namespace: openshift-gitops
+  annotations:
+    # Before loki (6), which needs the LokiStack type
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/loki-operator
+  destination:
+    # The Subscription sets its own namespace (operators)
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

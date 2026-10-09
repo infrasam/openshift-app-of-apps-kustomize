@@ -1,0 +1,10 @@
+# This folder is one app: this cluster's logs, sent to the hub's Loki.
+# Only the Application files are listed; each one installs its own subfolder.
+#
+# Production (OpenShift): the Red Hat OpenShift Logging operator (cluster-logging) with a
+# ClusterLogForwarder does the same job with Vector; RHACM itself does not collect logs.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - opentelemetry-operator.yaml
+  - collector.yaml

@@ -1,0 +1,19 @@
+# loki-operator via OLM: runs LokiStack, the log store (applications/loki/).
+# Lab: upstream package from operatorhubio-catalog (alpha, v0.12.0, Loki 3.7).
+# Production: "loki-operator" from redhat-operators (Red Hat OpenShift Logging), channel
+# stable-6.x, in openshift-operators-redhat.
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: loki-operator
+  # AllNamespaces-only operator: "operators" already has a global OperatorGroup
+  # (production: openshift-operators-redhat)
+  namespace: operators
+spec:
+  name: loki-operator
+  channel: alpha
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: loki-operator.v0.12.0
+  # TODO(prod): Manual approval so upgrades are deliberate, not automatic
+  installPlanApproval: Automatic

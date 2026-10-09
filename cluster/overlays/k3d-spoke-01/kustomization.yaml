@@ -8,3 +8,4 @@ resources:
   - apps/cert-manager
   - apps/external-secrets
   - apps/monitoring
+  - apps/logging
