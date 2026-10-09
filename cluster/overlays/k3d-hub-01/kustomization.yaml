@@ -22,5 +22,7 @@ resources:
   - grafana-operator.yaml
   - grafana.yaml
   - alerting.yaml
+  - loki-operator.yaml
+  - loki.yaml
   - cluster-credentials.yaml
   - secret-demo.yaml

@@ -1,0 +1,33 @@
+# Hub-only: Loki, the fleet's central log store (see applications/loki/).
+#   spoke collector --OTLP (HTTPS)--> Loki distributor --> S3 bucket "loki" (seaweedfs.yaml)
+#   Grafana --> Loki query-frontend
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: openshift-gitops
+  annotations:
+    # After loki-operator (5) and seaweedfs (4)
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/loki
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: loki
+  syncPolicy:
+    automated:
+      # Never prune automatically: the ingesters keep unflushed logs on their volumes
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

@@ -1,5 +1,5 @@
-# Where Grafana reads from: Thanos Query (metrics from every cluster) and Alertmanager
-# (the alerts from applications/alerting/).
+# Where Grafana reads from: Thanos Query (metrics from every cluster), Alertmanager
+# (the alerts from applications/alerting/) and Loki (logs, at the bottom).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDatasource
 metadata:
@@ -36,3 +36,24 @@ spec:
     url: http://alertmanager-operated.thanos.svc:9093
     jsonData:
       implementation: prometheus
+---
+# Logs from every cluster (applications/loki/), tenant "fleet"
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: loki
+  namespace: grafana
+spec:
+  instanceSelector:
+    matchLabels:
+      grafana: hub
+  datasource:
+    name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://logs-query-frontend-http.loki.svc:3100
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: fleet

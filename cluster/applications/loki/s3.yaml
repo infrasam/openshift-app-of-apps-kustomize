@@ -1,0 +1,27 @@
+# Where Loki keeps its logs: the S3 bucket "loki" in SeaweedFS, in the format the
+# loki-operator expects. The S3 login comes from OpenBao, as for Thanos.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: loki-s3
+  namespace: loki
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: openbao
+  target:
+    name: loki-s3
+    template:
+      data:
+        bucketnames: loki
+        # Lab: plain HTTP inside the cluster. Production: the S3 service's TLS endpoint.
+        endpoint: http://seaweedfs-all-in-one.object-storage.svc:8333
+        region: us-east-1
+        # SeaweedFS (like most on-premise S3) serves buckets as a path, not a hostname
+        forcepathstyle: "true"
+        access_key_id: "{{ .access_key }}"
+        access_key_secret: "{{ .secret_key }}"
+  dataFrom:
+    - extract:
+        key: clusters/k3d-hub-01/s3

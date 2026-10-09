@@ -1,0 +1,26 @@
+# The log store. The operator turns this into the Loki components (distributor, ingester,
+# querier, query-frontend, compactor, index-gateway) as separate Deployments/StatefulSets.
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: logs
+  namespace: loki
+spec:
+  # Lab: the smallest size, no replication. Production: 1x.small or larger.
+  size: 1x.demo
+  storage:
+    secret:
+      name: loki-s3
+      type: s3
+    schemas:
+      - version: v13
+        effectiveDate: "2026-10-01"
+  storageClassName: local-path
+  limits:
+    global:
+      retention:
+        days: 7
+  # No "tenants": no gateway in front of Loki. Every client names its tenant in the
+  # X-Scope-OrgID header (all clusters write to the tenant "fleet").
+  # Production (OpenShift Logging): tenants.mode openshift-logging, with OpenShift login
+  # and the tenants application, infrastructure and audit.
