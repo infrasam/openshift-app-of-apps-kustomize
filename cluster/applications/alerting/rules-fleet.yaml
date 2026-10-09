@@ -1,0 +1,56 @@
+# Alert rules for the whole fleet. Every series carries the label "cluster", so each alert
+# says which cluster it is about. Add more rules here, or in new files with the same label.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fleet
+  namespace: thanos
+  labels:
+    role: fleet-alerts
+spec:
+  groups:
+    - name: fleet
+      rules:
+        # Always firing. If it is missing in Alertmanager, the alert chain itself is broken.
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: The alert chain works (this alert always fires).
+
+        # A cluster that sent metrics during the last hour has gone silent
+        - alert: ClusterMetricsMissing
+          expr: |
+            group by (cluster) (count_over_time(up[1h]))
+              unless
+            group by (cluster) (count_over_time(up[5m]))
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.cluster }} has sent no metrics for 5 minutes."
+
+        - alert: TargetDown
+          expr: up == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.cluster }}: {{ $labels.job }} on {{ $labels.instance }} cannot be scraped."
+
+        - alert: PodCrashLooping
+          expr: max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[5m]) >= 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.cluster }}: {{ $labels.namespace }}/{{ $labels.pod }} keeps crashing."
+
+        - alert: NodeMemoryHigh
+          expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.cluster }}: {{ $labels.instance }} uses {{ $value | printf \"%.0f\" }}% of its memory."

@@ -1,0 +1,19 @@
+# grafana-operator via OLM: Grafana, its data sources and dashboards as Kubernetes objects
+# (applications/grafana/). Lab: upstream package from operatorhubio-catalog, channel v5.
+# Production: the community grafana-operator from OperatorHub (Red Hat ships none), or the
+# Grafana that RHACM Observability installs on the hub.
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: grafana-operator
+  # Watches all namespaces: "operators" already has a global OperatorGroup
+  # (production: openshift-operators)
+  namespace: operators
+spec:
+  name: grafana-operator
+  channel: v5
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: grafana-operator.v5.24.0
+  # TODO(prod): Manual approval so upgrades are deliberate, not automatic
+  installPlanApproval: Automatic

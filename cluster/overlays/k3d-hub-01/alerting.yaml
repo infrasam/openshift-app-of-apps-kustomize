@@ -1,0 +1,31 @@
+# Hub-only: alerts for the whole fleet (see applications/alerting/).
+#   Thanos Ruler --evaluates rules against--> Thanos Query --firing alerts--> Alertmanager
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alerting
+  namespace: openshift-gitops
+  annotations:
+    # After prometheus-operator (5) and thanos (5): needs the types and the namespace
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/alerting
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: thanos
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,38 @@
+# Where Grafana reads from: Thanos Query (metrics from every cluster) and Alertmanager
+# (the alerts from applications/alerting/).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: thanos
+  namespace: grafana
+spec:
+  instanceSelector:
+    matchLabels:
+      grafana: hub
+  datasource:
+    name: Thanos
+    uid: thanos
+    type: prometheus
+    access: proxy
+    url: http://thanos-query.thanos.svc:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 30s
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: alertmanager
+  namespace: grafana
+spec:
+  instanceSelector:
+    matchLabels:
+      grafana: hub
+  datasource:
+    name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager-operated.thanos.svc:9093
+    jsonData:
+      implementation: prometheus

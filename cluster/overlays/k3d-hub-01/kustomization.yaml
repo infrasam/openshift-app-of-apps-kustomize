@@ -18,5 +18,9 @@ resources:
   - object-storage.yaml
   - seaweedfs.yaml
   - thanos.yaml
+  - prometheus-operator.yaml
+  - grafana-operator.yaml
+  - grafana.yaml
+  - alerting.yaml
   - cluster-credentials.yaml
   - secret-demo.yaml

@@ -1,0 +1,32 @@
+# Thanos Ruler: evaluates the alert rules (PrometheusRule objects labelled
+# role: fleet-alerts in this namespace) against Thanos Query, so one rule covers every
+# cluster, and sends firing alerts to Alertmanager.
+# The operator creates the StatefulSet and the Service "thanos-ruler-operated".
+apiVersion: monitoring.coreos.com/v1
+kind: ThanosRuler
+metadata:
+  name: hub
+  namespace: thanos
+spec:
+  image: quay.io/thanos/thanos:v0.42.4
+  replicas: 1
+  queryEndpoints:
+    - dnssrv+_http._tcp.thanos-query.thanos.svc.cluster.local
+  alertmanagersUrl:
+    - dnssrv+_web._tcp.alertmanager-operated.thanos.svc.cluster.local
+  ruleSelector:
+    matchLabels:
+      role: fleet-alerts
+  evaluationInterval: 30s
+  # Rule results are kept locally only; nothing to upload to S3 for alerts
+  retention: 24h
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
