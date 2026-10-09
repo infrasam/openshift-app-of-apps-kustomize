@@ -13,5 +13,7 @@ resources:
   - openbao-config.yaml
   - openbao.yaml
   - secret-store.yaml
+  - vault-config-operator-config.yaml
+  - vault-config-operator.yaml
   - cluster-credentials.yaml
   - secret-demo.yaml

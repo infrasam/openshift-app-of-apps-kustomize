@@ -1,0 +1,48 @@
+# Hub-only: manages OpenBao configuration from Kubernetes objects in Git (AuthEngineMount,
+# KubernetesAuthEngineConfig, KubernetesAuthEngineRole, Policy). Each managed cluster's folder
+# describes its own access to OpenBao, so a new cluster gets it without manual steps.
+# It logs in to OpenBao with the role "vault-config" from OpenBao's self-initialization.
+# Production: the same operator (Red Hat Community of Practice) against the corporate Vault.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-config-operator
+  namespace: openshift-gitops
+  annotations:
+    # After vault-config-operator-config (1): the namespace and the CA must exist
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://redhat-cop.github.io/vault-config-operator
+    chart: vault-config-operator
+    targetRevision: v1.0.3
+    helm:
+      releaseName: vault-config-operator
+      valuesObject:
+        # Webhook certificates from cert-manager (on OpenShift: the service CA does it)
+        enableCertManager: true
+        # No Prometheus yet (comes with the monitoring phase)
+        enableMonitoring: false
+        env:
+          - name: VAULT_ADDR
+            value: https://openbao-active.openbao.svc:8200
+          - name: VAULT_CACERT
+            value: /vault-ca/ca.crt
+        volumes:
+          - name: vault-ca
+            secret:
+              secretName: vault-ca-trust
+        volumeMounts:
+          - name: vault-ca
+            mountPath: /vault-ca
+            readOnly: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault-config-operator
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
