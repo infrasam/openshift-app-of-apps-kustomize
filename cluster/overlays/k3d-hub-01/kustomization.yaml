@@ -17,5 +17,6 @@ resources:
   - vault-config-operator.yaml
   - object-storage.yaml
   - seaweedfs.yaml
+  - thanos.yaml
   - cluster-credentials.yaml
   - secret-demo.yaml

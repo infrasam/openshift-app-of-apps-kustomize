@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - objstore.yaml
+  - receive.yaml
+  - store.yaml
+  - query.yaml
+  - compactor.yaml
+  - httproute.yaml

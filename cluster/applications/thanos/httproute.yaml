@@ -1,0 +1,24 @@
+# The spokes send their metrics here (OpenShift: a Route to observatorium-api).
+# The Gateway terminates TLS with the wildcard certificate from lab-ca, which the spokes
+# already trust (hub-ca). Lab: anyone who reaches it may write. Production: mTLS per cluster.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: thanos-receive
+  namespace: thanos
+spec:
+  parentRefs:
+    - name: apps
+      namespace: openshift-ingress
+      sectionName: https
+  hostnames:
+    - thanos-receive.apps.hub.172.19.0.3.nip.io
+  rules:
+    - matches:
+        # Only the write endpoint is exposed, nothing else of Receive
+        - path:
+            type: Exact
+            value: /api/v1/receive
+      backendRefs:
+        - name: thanos-receive
+          port: 19291
