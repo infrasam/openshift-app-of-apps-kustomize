@@ -11,7 +11,7 @@ spec:
       namespace: openshift-ingress
       sectionName: tls-passthrough-openbao
   hostnames:
-    - openbao.apps.hub.127.0.0.1.nip.io
+    - openbao.apps.hub.172.19.0.3.nip.io
   rules:
     - backendRefs:
         # Always the Raft leader, which serves both the API and the UI

@@ -9,7 +9,7 @@ spec:
     - name: apps
       sectionName: http
   hostnames:
-    - "*.apps.hub.127.0.0.1.nip.io"
+    - "*.apps.hub.172.19.0.3.nip.io"
   rules:
     - filters:
         - type: RequestRedirect
