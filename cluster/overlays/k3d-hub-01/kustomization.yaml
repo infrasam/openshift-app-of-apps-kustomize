@@ -16,5 +16,6 @@ resources:
   - vault-config-operator-config.yaml
   - vault-config-operator.yaml
   - minio-operator.yaml
+  - object-storage.yaml
   - cluster-credentials.yaml
   - secret-demo.yaml
