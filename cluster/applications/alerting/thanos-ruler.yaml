@@ -13,7 +13,8 @@ spec:
   queryEndpoints:
     - dnssrv+_http._tcp.thanos-query.thanos.svc.cluster.local
   alertmanagersUrl:
-    - dnssrv+_web._tcp.alertmanager-operated.thanos.svc.cluster.local
+    # The scheme is required here (unlike queryEndpoints above)
+    - dnssrv+http://_web._tcp.alertmanager-operated.thanos.svc.cluster.local
   ruleSelector:
     matchLabels:
       role: fleet-alerts
