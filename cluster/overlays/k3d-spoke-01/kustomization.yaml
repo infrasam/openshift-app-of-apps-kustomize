@@ -1,8 +1,8 @@
 # k3d-spoke-01's own folder. The spoke's own Argo CD (from the hub's "gitops" policy) reads
-# this file through its root app: everything listed here ends up on k3d-spoke-01.
+# this file through its root app: every app listed here ends up on k3d-spoke-01.
 #
 # One folder per app under apps/, the same structure as docs/openshift-cert-manager-adcs.md.
-# Empty for now: the next step adds apps/cert-manager.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources: []
+resources:
+  - apps/cert-manager

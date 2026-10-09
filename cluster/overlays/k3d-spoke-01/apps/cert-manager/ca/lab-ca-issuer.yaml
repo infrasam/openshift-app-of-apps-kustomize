@@ -1,0 +1,9 @@
+# The issuer every application uses. Production: replace with the ADCS or Vault PKI
+# issuer under the same role; Certificates only need a different issuerRef name.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: lab-ca
+spec:
+  ca:
+    secretName: lab-root-ca
