@@ -210,7 +210,7 @@ sudo cp ~/lab-root-ca.crt /usr/local/share/ca-certificates/lab-root-ca.crt && su
 
 Import `~/lab-root-ca.crt` in the browser as a certificate authority too.
 
-**Open the Argo CD UI** at <https://argocd.apps.hub.127.0.0.1.nip.io> and log in as `admin`:
+**Open the Argo CD UI** at <https://argocd.apps.hub.172.19.0.3.nip.io> and log in as `admin`:
 
 ```bash
 kubectl -n openshift-gitops get secret argocd-cluster -o jsonpath='{.data.admin\.password}' | base64 -d; echo
@@ -230,11 +230,11 @@ kubectl -n openbao create secret generic openbao-unseal-key --from-file=unseal.k
 
 ```bash
 kubectl -n openbao create token openbao-admin | jq -Rc '{role: "admin", jwt: .}' \
-  | curl -s -X POST --data @- https://openbao.apps.hub.127.0.0.1.nip.io/v1/auth/kubernetes/login \
+  | curl -s -X POST --data @- https://openbao.apps.hub.172.19.0.3.nip.io/v1/auth/kubernetes/login \
   | jq -r .auth.client_token
 ```
 
-The UI is at <https://openbao.apps.hub.127.0.0.1.nip.io>.
+The UI is at <https://openbao.apps.hub.172.19.0.3.nip.io>.
 
 **Follow a spoke being created:**
 
@@ -272,5 +272,8 @@ kubectl --kubeconfig /tmp/k3d-spoke-01.kubeconfig get nodes
 - Spokes are vanilla Kubernetes, so there are no Routes, SCCs or other OpenShift-only APIs.
 - The Cluster API Docker load balancer listens on `0.0.0.0`.
 - After a restart of Docker, start the spoke again: `docker start $(docker ps -aq --filter name=k3d-spoke-01)`.
-- The cluster domain (`apps.hub.127.0.0.1.nip.io`) is still written in `base`; it becomes a
-  per-cluster patch when spokes get `base`.
+- The hub's apps domain is `*.apps.hub.172.19.0.3.nip.io`: `172.19.0.3` is the hub's fixed address
+  on the Docker network `kind`, so the name works from the laptop **and** from inside the spokes
+  (which send metrics and logs to the hub). All lab containers have fixed addresses on that
+  network (hub 172.19.0.3 and .5, spoke 172.19.0.2 and .4), so a Docker restart keeps them.
+- Spokes get their own apps in `cluster/overlays/<spoke>/apps/`; they do not use `base`.

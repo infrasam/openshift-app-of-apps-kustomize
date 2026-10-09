@@ -11,7 +11,7 @@ spec:
     - name: https
       protocol: HTTPS
       port: 443
-      hostname: "*.apps.hub.127.0.0.1.nip.io"
+      hostname: "*.apps.hub.172.19.0.3.nip.io"
       tls:
         mode: Terminate
         certificateRefs:
@@ -28,7 +28,7 @@ spec:
     - name: tls-passthrough-openbao
       protocol: TLS
       port: 443
-      hostname: openbao.apps.hub.127.0.0.1.nip.io
+      hostname: openbao.apps.hub.172.19.0.3.nip.io
       tls:
         mode: Passthrough
       allowedRoutes:
@@ -40,7 +40,7 @@ spec:
     - name: http
       protocol: HTTP
       port: 80
-      hostname: "*.apps.hub.127.0.0.1.nip.io"
+      hostname: "*.apps.hub.172.19.0.3.nip.io"
       allowedRoutes:
         namespaces:
           from: Same

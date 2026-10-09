@@ -18,7 +18,7 @@ spec:
     - "*.openbao-internal"
     - "*.openbao-internal.openbao.svc.cluster.local"
     # UI through the Gateway (step 4.4)
-    - openbao.apps.hub.127.0.0.1.nip.io
+    - openbao.apps.hub.172.19.0.3.nip.io
   ipAddresses:
     # The bao CLI inside the pod talks to https://127.0.0.1:8200
     - 127.0.0.1

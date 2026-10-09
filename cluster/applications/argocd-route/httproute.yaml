@@ -10,7 +10,7 @@ spec:
       namespace: openshift-ingress
       sectionName: https
   hostnames:
-    - argocd.apps.hub.127.0.0.1.nip.io
+    - argocd.apps.hub.172.19.0.3.nip.io
   rules:
     - backendRefs:
         - name: argocd-server

@@ -9,7 +9,7 @@ metadata:
 spec:
   secretName: apps-wildcard-tls
   dnsNames:
-    - "*.apps.hub.127.0.0.1.nip.io"
+    - "*.apps.hub.172.19.0.3.nip.io"
   duration: 2160h      # 90 days
   renewBefore: 720h    # renew 30 days before expiry
   privateKey:
