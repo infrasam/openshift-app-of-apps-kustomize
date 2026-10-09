@@ -1,0 +1,56 @@
+# Hub-only: S3 object storage for the fleet's metrics (bucket "thanos") and logs (bucket "loki").
+# SeaweedFS (Apache 2.0) in its all-in-one mode: one pod, one volume.
+# Helm, not an operator: MinIO stopped publishing images in 2025, and no other S3 operator in the
+# catalog works on k3d (NooBaa is from 2021, Rook-Ceph needs real block devices).
+# Production equivalent: OpenShift Data Foundation (Multicloud Object Gateway) or an external S3.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: seaweedfs
+  namespace: openshift-gitops
+  annotations:
+    # After object-storage (3): the namespace and the login Secret must exist
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  source:
+    repoURL: https://seaweedfs.github.io/seaweedfs/helm
+    chart: seaweedfs
+    targetRevision: 4.48.0
+    helm:
+      releaseName: seaweedfs
+      valuesObject:
+        # All-in-one: master, volume, filer and S3 in one pod
+        master:
+          enabled: false
+        volume:
+          enabled: false
+        filer:
+          enabled: false
+        allInOne:
+          enabled: true
+          s3:
+            enabled: true
+            # Login from object-storage/s3-config.yaml (OpenBao via ESO)
+            enableAuth: true
+            existingConfigSecret: s3-config
+            createBuckets:
+              - name: thanos
+              - name: loki
+          data:
+            type: persistentVolumeClaim
+            size: 10Gi
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: object-storage
+  syncPolicy:
+    automated:
+      # Never prune the storage automatically: it holds all metrics and logs
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

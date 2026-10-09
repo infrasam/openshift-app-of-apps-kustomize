@@ -15,7 +15,7 @@ resources:
   - secret-store.yaml
   - vault-config-operator-config.yaml
   - vault-config-operator.yaml
-  - minio-operator.yaml
   - object-storage.yaml
+  - seaweedfs.yaml
   - cluster-credentials.yaml
   - secret-demo.yaml
