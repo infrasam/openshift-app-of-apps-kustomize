@@ -7,3 +7,4 @@ kind: Kustomization
 resources:
   - apps/cert-manager
   - apps/external-secrets
+  - apps/monitoring

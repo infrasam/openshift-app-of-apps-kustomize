@@ -1,0 +1,67 @@
+# This cluster's Prometheus. Scrapes everything selected by the ServiceMonitors in this
+# namespace and sends it to the hub. Keeps only a short local copy: the hub is the archive.
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: k8s
+  namespace: monitoring
+spec:
+  replicas: 1
+  serviceAccountName: prometheus
+  # Every ServiceMonitor in this namespace (servicemonitors.yaml)
+  serviceMonitorSelector: {}
+  # Added to every series, so the hub can tell the clusters apart
+  externalLabels:
+    cluster: k3d-spoke-01
+  retention: 6h
+  remoteWrite:
+    - url: https://thanos-receive.apps.hub.172.19.0.3.nip.io/api/v1/receive
+      tlsConfig:
+        ca:
+          configMap:
+            name: hub-ca
+            key: ca.crt
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 768Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+---
+# Read-only: discover targets and read node and API server metrics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: monitoring-prometheus
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/metrics, services, endpoints, pods]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - nonResourceURLs: [/metrics]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: monitoring-prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: monitoring-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: monitoring
