@@ -1,0 +1,37 @@
+# How OpenBao checks tokens from this cluster: it asks the cluster's own API (TokenReview).
+# No reviewer token is stored: the token that logs in (ESO's) is used to check itself, so ESO's
+# ServiceAccount on the spoke has system:auth-delegator.
+# kubernetesCACert: the cluster's API CA (public). Changes if the cluster is recreated.
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: KubernetesAuthEngineConfig
+metadata:
+  name: k3d-spoke-01
+  namespace: k3d-spoke-01
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  path: spokes
+  kubernetesHost: https://172.19.0.4:6443
+  disableLocalCAJWT: true
+  kubernetesCACert: |
+      -----BEGIN CERTIFICATE-----
+      MIIC6jCCAdKgAwIBAgIBADANBgkqhkiG9w0BAQsFADAVMRMwEQYDVQQDEwprdWJl
+      cm5ldGVzMB4XDTI2MDkyOTE3NTc0N1oXDTM2MDkyNjE4MDI0N1owFTETMBEGA1UE
+      AxMKa3ViZXJuZXRlczCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAM6g
+      NULTLDIAdxs2eKUWDaHQgY9FmojlD/F0U54JNkFWiF7oppFraxpux/lP2tQtefof
+      a9t/xgfngZtX4i6kDdFBXd8B7V032sMtPNbcnvtPwr/cfzCwtU//2WPo8/RRnU3W
+      asboxjZ1btq43IrGrmLiCx6GZAtO8Ik6AnSfK9Oj8yYVUrDFLh8qfCRFjBK2VGl1
+      Ew1INwGOzkQpf3S0mSR4/Ug53BCenc8LUjfGpMmOX7H8mTSX1gYy0aos9bNL2QdK
+      cqNaFxCOdk0A1+e11KYkf4jnT3zlBZeJ1Rn2qj9Om4zvr05I7Ce7e3gYhueRvq2E
+      RLtWKoP222D6TlWU46kCAwEAAaNFMEMwDgYDVR0PAQH/BAQDAgKkMBIGA1UdEwEB
+      /wQIMAYBAf8CAQAwHQYDVR0OBBYEFBLmYKeOnLutp78eFYJLbI7/eilmMA0GCSqG
+      SIb3DQEBCwUAA4IBAQC8tLxymEgkqfHLREAryDM/Ngxi/cL6jy0Zo0XFUPHi3NNk
+      uo6VcA+kxkNDA23iRLUYJ6HTgBxkNjT8Qy+Xey8FpH8ilwnLlloDjVIT61YEL+Yw
+      NRQT/cXpODoGVy8ac4iREoYenS42Qhmpaw9ERRojkuAwhUi/2IKSPyszBBcOIKAy
+      QJTH59YnlEM7KbPvUKdMJ+aTjTjoTLJhBT7MaPp9yu2TjTutIncCANFMxVIR6gpk
+      Sm6x5d24iiLCh/RA3jPYWupN9tK/4sSXm9lj7PBjYyS88cl//oNsYvGkogfT0zYd
+      RtNbBEMK7l+fljIm59fGhSTfDPR1tk9JWANzWIVA
+      -----END CERTIFICATE-----

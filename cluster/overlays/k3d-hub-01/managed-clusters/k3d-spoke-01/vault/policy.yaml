@@ -1,0 +1,18 @@
+# What ESO on k3d-spoke-01 may read: shared secrets and this cluster's own path. Nothing else.
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: eso-k3d-spoke-01
+  namespace: k3d-spoke-01
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: acl
+  policy: |
+    path "secret/data/shared/*"                    { capabilities = ["read"] }
+    path "secret/metadata/shared/*"                { capabilities = ["read", "list"] }
+    path "secret/data/clusters/k3d-spoke-01/*"     { capabilities = ["read"] }
+    path "secret/metadata/clusters/k3d-spoke-01/*" { capabilities = ["read", "list"] }
