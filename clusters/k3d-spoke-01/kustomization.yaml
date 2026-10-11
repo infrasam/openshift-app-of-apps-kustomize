@@ -12,8 +12,8 @@ resources:
   - external-secrets.yaml           # -1
   - secret-store.yaml               # 0  secrets from the hub's OpenBao
 
-  # Metrics and logs, sent to the hub
+  # Metrics and logs, sent to the hub (logs are disabled for now)
   - prometheus-operator.yaml        # -3
   - prometheus.yaml                 # 1
-  - opentelemetry-operator.yaml     # -2
-  - log-collector.yaml              # 1
+  # - opentelemetry-operator.yaml   # -2  disabled: the hub's Loki is disabled
+  # - log-collector.yaml            # 1   disabled together with opentelemetry-operator.yaml

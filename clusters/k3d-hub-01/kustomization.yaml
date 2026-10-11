@@ -37,12 +37,12 @@ resources:
   - object-storage.yaml             # 3
   - seaweedfs.yaml                  # 4
 
-  # Metrics, alerts, dashboards and logs for the whole fleet
+  # Metrics, alerts, dashboards and logs for the whole fleet (logs are disabled for now)
   - prometheus-operator.yaml        # 5
   - grafana-operator.yaml           # 5
-  - loki-operator.yaml              # 5
+  # - loki-operator.yaml            # 5  disabled: saves RAM; uncomment to enable logs again
   - thanos.yaml                     # 5
   - alerting.yaml                   # 6
   - grafana.yaml                    # 6
-  - loki.yaml                       # 6
+  # - loki.yaml                     # 6  disabled together with loki-operator.yaml
 
