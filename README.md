@@ -178,11 +178,25 @@ kubectl -n openbao create token openbao-admin | jq -Rc '{role: "admin", jwt: .}'
 kubectl -n grafana get secret grafana-admin-credentials -o jsonpath='{.data.GF_SECURITY_ADMIN_PASSWORD}' | base64 -d; echo
 ```
 
-**Metrics and logs.** Every spoke runs Prometheus and a log collector and sends to the hub:
-metrics to Thanos (`https://thanos-receive.apps.hub...`), logs to Loki
-(`https://loki.apps.hub...`). Both are stored in S3 (SeaweedFS). In Grafana, the dashboard
-*Fleet overview* shows every cluster; the data source *Loki* has the logs, labelled
-`k8s_cluster_name`, `k8s_namespace_name` and `k8s_pod_name`.
+**Metrics.** Every spoke runs Prometheus and sends its metrics to Thanos on the hub
+(`https://thanos-receive.apps.hub...`), stored in S3 (SeaweedFS). In Grafana, the dashboard
+*Fleet overview* shows every cluster. Thanos Ruler evaluates the alert rules in
+`apps/alerting/` and sends firing alerts to Alertmanager.
+
+### Disabled apps
+
+Some apps are in the repository but commented out in `clusters/<cluster>/kustomization.yaml`,
+because the lab does not have enough RAM for them. To turn one on, remove the `#` in front of its
+line (and of the lines that belong with it) and merge.
+
+| App | Lines | What it does |
+|---|---|---|
+| Logging | hub: `loki-operator.yaml`, `loki.yaml`; spoke: `opentelemetry-operator.yaml`, `log-collector.yaml` | Every pod's logs from the spokes into Loki on the hub, searchable in Grafana (data source *Loki*) |
+| Trivy Operator | hub: `trivy-operator.yaml` | Scans every running image for known vulnerabilities (`kubectl get vulnerabilityreports -A`) and checks workload settings (`kubectl get configauditreports -A`) |
+
+Commenting a line out again does not remove what the app installed: Argo CD only deletes the
+`Application`. Remove the app's objects by hand afterwards (its custom resources first, then its
+namespace and `Subscription`).
 
 ### The spoke
 

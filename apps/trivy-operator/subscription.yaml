@@ -1,0 +1,29 @@
+# Trivy Operator via OLM: scans every workload's images for known vulnerabilities and checks
+# the cluster's configuration. The results are Kubernetes objects:
+#   kubectl get vulnerabilityreports -A      known CVEs per container image
+#   kubectl get configauditreports -A        risky settings per workload
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: trivy-operator
+  # Watches all namespaces: "operators" already has a global OperatorGroup
+  namespace: operators
+spec:
+  name: trivy-operator
+  channel: alpha
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: trivy-operator.v0.22.0
+  installPlanApproval: Automatic
+  config:
+    env:
+      # One scan job at a time: each job loads the vulnerability database (a few hundred MB)
+      - name: OPERATOR_CONCURRENT_SCAN_JOBS_LIMIT
+        value: "1"
+      - name: OPERATOR_SCAN_JOB_TIMEOUT
+        value: 10m
+      # Scan only what is running now, not every old ReplicaSet
+      - name: OPERATOR_VULNERABILITY_SCANNER_SCAN_ONLY_CURRENT_REVISIONS
+        value: "true"
+      - name: OPERATOR_CONFIG_AUDIT_SCANNER_SCAN_ONLY_CURRENT_REVISIONS
+        value: "true"

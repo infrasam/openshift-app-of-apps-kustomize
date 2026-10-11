@@ -1,0 +1,16 @@
+# Settings for the scan jobs. The operator reads this ConfigMap from its own namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-operator-trivy-config
+  namespace: operators
+data:
+  # Every scan job downloads and uses the vulnerability database itself
+  trivy.mode: Standalone
+  # Only report what matters, and only what has a fix
+  trivy.severity: CRITICAL,HIGH
+  trivy.ignoreUnfixed: "true"
+  trivy.timeout: 10m0s
+  trivy.resources.requests.cpu: 100m
+  trivy.resources.requests.memory: 256Mi
+  trivy.resources.limits.memory: 768Mi
