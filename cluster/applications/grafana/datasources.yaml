@@ -52,7 +52,7 @@ spec:
     uid: loki
     type: loki
     access: proxy
-    url: http://logs-query-frontend-http.loki.svc:3100
+    url: http://logs-gateway-http.loki.svc:8080
     jsonData:
       httpHeaderName1: X-Scope-OrgID
     secureJsonData:

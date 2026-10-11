@@ -20,7 +20,10 @@ spec:
     global:
       retention:
         days: 7
-  # No "tenants": no gateway in front of Loki. Every client names its tenant in the
-  # X-Scope-OrgID header (all clusters write to the tenant "fleet").
-  # Production (OpenShift Logging): tenants.mode openshift-logging, with OpenShift login
-  # and the tenants application, infrastructure and audit.
+  # Passthrough: the gateway in front of Loki takes the tenant from the client's
+  # X-Scope-OrgID header (all clusters write to the tenant "fleet") and rejects requests
+  # without one. Phase D: passthrough.ca, so only clusters with a client certificate get in.
+  # Production (OpenShift Logging): mode openshift-logging, with OpenShift login and the
+  # tenants application, infrastructure and audit.
+  tenants:
+    mode: passthrough

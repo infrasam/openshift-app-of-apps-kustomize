@@ -20,5 +20,6 @@ spec:
             type: Exact
             value: /otlp/v1/logs
       backendRefs:
-        - name: logs-distributor-http
-          port: 3100
+        # Through the gateway, which checks the tenant header
+        - name: logs-gateway-http
+          port: 8080
