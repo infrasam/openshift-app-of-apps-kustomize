@@ -1,13 +1,12 @@
-# Hub-only: Grafana for the whole fleet, with Thanos Query and Alertmanager as data sources
-# and the dashboards in apps/grafana/.
+# Grafana (grafana-operator, OLM) with the fleet's dashboards and data sources.
+# Configuration: apps/grafana/
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: grafana
   namespace: openshift-gitops
   annotations:
-    # After grafana-operator (5) and thanos (5)
-    argocd.argoproj.io/sync-wave: "6"
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   project: default
   source:
@@ -23,6 +22,9 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
     retry:
       limit: 10
       backoff:

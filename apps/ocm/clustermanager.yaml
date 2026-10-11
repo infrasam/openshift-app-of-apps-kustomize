@@ -1,0 +1,27 @@
+# The hub itself (ACM equivalent: MultiClusterHub).
+# The CRD is installed by the operator above, so it does not exist on the first sync:
+# skip the dry-run and let the Application retry until the CRD is there.
+apiVersion: operator.open-cluster-management.io/v1
+kind: ClusterManager
+metadata:
+  name: cluster-manager
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  deployOption:
+    mode: Default
+  # Zero-touch join of clusters created by Cluster API (ACM does this out of the box for Hive)
+  registrationConfiguration:
+    featureGates:
+      # Install the klusterlet on a CAPI cluster when a ManagedCluster with its name appears
+      - feature: ClusterImporter
+        mode: Enable
+      # Approve join requests (CSRs) from the bootstrap identity without a human
+      - feature: ManagedClusterAutoApproval
+        mode: Enable
+    autoApproveUsers:
+      - system:serviceaccount:open-cluster-management:agent-registration-bootstrap
+    importerConfiguration:
+      # Build the agent config from cluster-info + the bootstrap SA (no per-cluster secret)
+      renderers:
+        - render-auto

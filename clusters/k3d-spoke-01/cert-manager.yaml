@@ -1,4 +1,5 @@
-# Application: cert-manager itself, installed by OLM from ./operator. First of all (wave -3).
+# cert-manager (OLM) and the lab CA that issues every certificate in the cluster.
+# Configuration: apps/cert-manager/ (the same as on the hub)
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -20,3 +21,12 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

@@ -7,4 +7,12 @@ resources:
   - store.yaml
   - query.yaml
   - compactor.yaml
+  - ruler.yaml
   - httproute.yaml
+# The alert rules as a ConfigMap. Its name gets a hash of the content, so the Ruler restarts
+# with the new rules whenever a rule file changes.
+configMapGenerator:
+  - name: thanos-rules
+    namespace: thanos
+    files:
+      - rules/fleet.yaml

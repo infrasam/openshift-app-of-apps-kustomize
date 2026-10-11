@@ -6,6 +6,8 @@ metadata:
   name: cert-manager
   # AllNamespaces-only operator: "operators" already has a global OperatorGroup
   namespace: operators
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   name: cert-manager
   channel: stable

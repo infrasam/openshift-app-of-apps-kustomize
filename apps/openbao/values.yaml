@@ -23,7 +23,7 @@ server:
     path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
 
   volumes:
-    # Certificate from lab-ca (openbao-config/certificate.yaml)
+    # Certificate from the lab CA (certificate.yaml in this folder)
     - name: openbao-tls
       secret:
         secretName: openbao-tls
@@ -156,7 +156,7 @@ server:
         }
 
         initialize "roles" {
-          # ESO logs in with openbao-config/serviceaccount.yaml
+          # ESO logs in with serviceaccount-eso.yaml
           request "eso" {
             operation = "update"
             path      = "auth/kubernetes/role/eso-k3d-hub-01"
@@ -179,7 +179,7 @@ server:
               token_ttl                                = "15m"
             }
           }
-          # Humans log in with a token for openbao-config/serviceaccount-admin.yaml.
+          # Humans log in with a token for serviceaccount-admin.yaml.
           # Who may create that token is decided by Kubernetes RBAC.
           request "admin" {
             operation = "update"

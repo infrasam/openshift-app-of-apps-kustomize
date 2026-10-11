@@ -1,14 +1,12 @@
-# Hub-only: Loki, the fleet's central log store (see apps/loki/).
-#   spoke collector --OTLP (HTTPS)--> Loki distributor --> S3 bucket "loki" (seaweedfs.yaml)
-#   Grafana --> Loki query-frontend
+# Loki (loki-operator, OLM), the fleet's log store in S3.
+# Configuration: apps/loki/
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: loki
   namespace: openshift-gitops
   annotations:
-    # After loki-operator (5) and seaweedfs (4)
-    argocd.argoproj.io/sync-wave: "6"
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   project: default
   source:
@@ -25,6 +23,9 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
     retry:
       limit: 10
       backoff:

@@ -1,13 +1,11 @@
-# cert-manager on every cluster: issues and renews TLS certificates.
-# Installed as an OLM operator, like on OpenShift (see apps/cert-manager/).
-# Applications request certificates through the ClusterIssuer/Certificate API.
+# cert-manager (OLM) and the lab CA that issues every certificate in the cluster.
+# Configuration: apps/cert-manager/
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: cert-manager
   namespace: openshift-gitops
   annotations:
-    # After Argo CD (-5), before anything that requests certificates
     argocd.argoproj.io/sync-wave: "-3"
 spec:
   project: default
@@ -16,7 +14,6 @@ spec:
     targetRevision: main
     path: apps/cert-manager
   destination:
-    # The Subscription sets its own namespace (operators)
     server: https://kubernetes.default.svc
   syncPolicy:
     automated:
@@ -24,3 +21,12 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

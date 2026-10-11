@@ -41,8 +41,8 @@ spec:
             # Every pod behind the headless Services, found through DNS
             - --endpoint=dnssrv+_grpc._tcp.thanos-receive.thanos.svc.cluster.local
             - --endpoint=dnssrv+_grpc._tcp.thanos-store.thanos.svc.cluster.local
-            # Thanos Ruler (apps/alerting/): makes the ALERTS series queryable
-            - --endpoint=dnssrv+_grpc._tcp.thanos-ruler-operated.thanos.svc.cluster.local
+            # Thanos Ruler (ruler.yaml): makes the ALERTS series queryable
+            - --endpoint=dnssrv+_grpc._tcp.thanos-ruler.thanos.svc.cluster.local
             # Same series from several replicas: show it once
             - --query.replica-label=receive_replica
             - --query.replica-label=thanos_ruler_replica

@@ -5,6 +5,8 @@ kind: ExternalSecret
 metadata:
   name: loki-s3
   namespace: loki
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   refreshInterval: 1h
   secretStoreRef:

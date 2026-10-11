@@ -5,6 +5,8 @@ kind: ExternalSecret
 metadata:
   name: s3-config
   namespace: object-storage
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   refreshInterval: 1h
   secretStoreRef:

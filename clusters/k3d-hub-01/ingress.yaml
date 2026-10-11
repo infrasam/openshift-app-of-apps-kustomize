@@ -1,28 +1,35 @@
-# Ingress on every cluster: Gateway API served by Istio, like OpenShift 4.19+.
-# See apps/ingress/.
+# Ingress: Gateway API types, Istio (Sail operator, OLM) and the cluster Gateway with its
+# wildcard certificate, plus the route to the Argo CD UI.
+# Configuration: apps/ingress/
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: ingress
   namespace: openshift-gitops
   annotations:
-    # After lab-ca and the Gateway API CRDs (-2) and the Sail Operator (-1)
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: default
-  source:
-    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
-    targetRevision: main
-    path: apps/ingress
+  sources:
+    # 1) The Gateway API types (CRDs), from the upstream project
+    - repoURL: https://github.com/kubernetes-sigs/gateway-api.git
+      targetRevision: v1.5.1
+      path: config/crd
+    # 2) This repository: the app's own YAML in apps/ingress/
+    - repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+      targetRevision: main
+      path: apps/ingress
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:
     automated:
-      prune: true
+      prune: false
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
-    # On a fresh cluster the Istio CRD appears after OLM installs the Sail Operator
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
     retry:
       limit: 10
       backoff:
