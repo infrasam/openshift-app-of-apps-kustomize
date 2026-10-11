@@ -24,8 +24,5 @@ resources:
   - alerting.yaml
   - loki-operator.yaml
   - loki.yaml
-  - cloudnative-pg.yaml
-  - keycloak-operator.yaml
-  - keycloak.yaml
   - cluster-credentials.yaml
   - secret-demo.yaml
