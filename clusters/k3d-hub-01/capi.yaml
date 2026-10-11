@@ -1,0 +1,35 @@
+# Cluster API: creates the managed clusters (on OpenShift: Hive).
+# Creates the spoke clusters defined in apps/cluster-provisioning/;
+# the Docker provider runs "machines" as containers.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: capi
+  namespace: openshift-gitops
+  annotations:
+    # Needs cert-manager (-3) for its webhook certificates
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  sources:
+    # 1) The Helm chart
+    - repoURL: https://kubernetes-sigs.github.io/cluster-api-operator
+      chart: cluster-api-operator
+      targetRevision: 0.29.0
+      helm:
+        valueFiles:
+          - $config/apps/capi/values.yaml
+    # 2) This repository: where the values file comes from ($config above)
+    - repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+      targetRevision: main
+      ref: config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: capi-operator-system
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: olm
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  project: default
+  sources:
+    # 1) The Helm chart
+    - repoURL: https://github.com/operator-framework/operator-lifecycle-manager.git
+      targetRevision: v0.46.0
+      path: deploy/chart
+      helm:
+        releaseName: olm
+        valueFiles:
+          - ../upstream/values.yaml
+          - $config/apps/olm/values.yaml
+    # 2) This repository: where the values file comes from ($config above)
+    - repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+      targetRevision: main
+      ref: config
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

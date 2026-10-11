@@ -1,0 +1,48 @@
+# Everything Argo CD installs on k3d-hub-01: one Application file per app.
+# The root Application points here. The configuration of each app is in apps/<app>/.
+#
+# Listed in install order (the sync-wave in each file decides the actual order).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Platform foundation
+  - olm.yaml                        # -10
+  - argocd.yaml                     # -5
+  - cert-manager.yaml               # -3
+  - gateway-api.yaml                # -2
+  - lab-ca.yaml                     # -2
+  - external-secrets.yaml           # -1
+  - sail-operator.yaml              # -1
+  - ingress.yaml                    # 0
+  - argocd-route.yaml               # 1
+
+  # Secrets: OpenBao and the connection from ESO
+  - openbao-config.yaml             # 0
+  - openbao.yaml                    # 1
+  - vault-config-operator-config.yaml  # 1
+  - secret-store.yaml               # 2
+  - vault-config-operator.yaml      # 2
+  - cluster-credentials.yaml        # 3
+  - secret-demo.yaml                # 3
+
+  # Fleet management: create, register and configure managed clusters
+  - ocm-hub.yaml                    # 0
+  - capi.yaml                       # 1
+  - governance-propagator.yaml      # 1
+  - governance.yaml                 # 1
+  - policies.yaml                   # 2
+  - spoke-provisioning.yaml         # 2  one Application per apps/cluster-provisioning/<cluster>
+
+  # Object storage (S3) for metrics and logs
+  - object-storage.yaml             # 3
+  - seaweedfs.yaml                  # 4
+
+  # Metrics, alerts, dashboards and logs for the whole fleet
+  - prometheus-operator.yaml        # 5
+  - grafana-operator.yaml           # 5
+  - loki-operator.yaml              # 5
+  - thanos.yaml                     # 5
+  - alerting.yaml                   # 6
+  - grafana.yaml                    # 6
+  - loki.yaml                       # 6
+

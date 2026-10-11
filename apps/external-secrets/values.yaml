@@ -1,0 +1,19 @@
+# Helm values for the "external-secrets" chart.
+# Used by: clusters/k3d-spoke-01/external-secrets.yaml, clusters/k3d-hub-01/external-secrets.yaml
+
+installCRDs: true
+# Lab: small footprint for the controller, webhook and cert controller
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+webhook:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+certController:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi

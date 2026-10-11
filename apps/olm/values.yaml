@@ -1,0 +1,13 @@
+# Helm values for the "deploy/chart" chart.
+# Used by: clusters/k3d-hub-01/olm.yaml
+
+olm:
+  image:
+    ref: quay.io/operator-framework/olm@sha256:4404599eb7b7736bdbd0f36260a60599f32acb6edeaf7d0c54bb10b36619e5fe
+catalog:
+  image:
+    ref: quay.io/operator-framework/olm@sha256:4404599eb7b7736bdbd0f36260a60599f32acb6edeaf7d0c54bb10b36619e5fe
+  opmImageArgs: --opmImage=quay.io/operator-framework/opm@sha256:e5a6220603fb4504d58c6e3e488386b817e3695c906a62ee0370b5faedc3799a
+package:
+  image:
+    ref: quay.io/operator-framework/olm@sha256:4404599eb7b7736bdbd0f36260a60599f32acb6edeaf7d0c54bb10b36619e5fe

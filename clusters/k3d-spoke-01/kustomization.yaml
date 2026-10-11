@@ -1,0 +1,19 @@
+# Everything Argo CD installs on k3d-spoke-01: one Application file per app.
+# The spoke's root Application (created by the hub's "gitops" policy) points here.
+# The configuration of each app is in apps/<app>/.
+#
+# Listed in install order (the sync-wave in each file decides the actual order).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Platform foundation
+  - cert-manager.yaml               # -3
+  - lab-ca.yaml                     # -2
+  - external-secrets.yaml           # -1
+  - secret-store.yaml               # 0  secrets from the hub's OpenBao
+
+  # Metrics and logs, sent to the hub
+  - prometheus-operator.yaml        # -3
+  - prometheus.yaml                 # 1
+  - opentelemetry-operator.yaml     # -2
+  - log-collector.yaml              # 1

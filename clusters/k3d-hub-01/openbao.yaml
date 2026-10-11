@@ -1,0 +1,36 @@
+# Hub-only: OpenBao, the one secret store for the whole fleet.
+# The upstream Helm chart, with all its settings right here under helm.valuesObject.
+# Its certificate, route and the ESO connection are plain YAML in openbao-config.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: openshift-gitops
+  annotations:
+    # After openbao-config (0): the namespace and the TLS certificate must exist first
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  sources:
+    # 1) The Helm chart
+    - repoURL: https://openbao.github.io/openbao-helm
+      chart: openbao
+      targetRevision: 0.30.0
+      helm:
+        releaseName: openbao
+        valueFiles:
+          - $config/apps/openbao/values.yaml
+    # 2) This repository: where the values file comes from ($config above)
+    - repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+      targetRevision: main
+      ref: config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  syncPolicy:
+    automated:
+      # Never prune anything of the secret store automatically
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
