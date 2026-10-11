@@ -1,0 +1,25 @@
+# Hub-only: cloudnative-pg, installed by OLM (see applications/cloudnative-pg/).
+# Used by keycloak.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudnative-pg
+  namespace: openshift-gitops
+  annotations:
+    # Before keycloak (6), which needs its types
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: cluster/applications/cloudnative-pg
+  destination:
+    # The Subscription sets its own namespace (operators)
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

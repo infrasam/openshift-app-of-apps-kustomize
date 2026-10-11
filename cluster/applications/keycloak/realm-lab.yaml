@@ -1,0 +1,104 @@
+# The realm "lab": the platform's users, groups and the applications that log in (OIDC
+# clients). Stands in for the company's directory: in production the groups come from AD.
+#
+# Groups decide access:
+#   platform-admins   full access (Argo CD admin, Grafana Admin, OpenBao admin)
+#   platform-viewers  read only
+#
+# NOTE: Keycloak imports a realm only when it does not exist yet. Later changes here are
+# NOT applied to a running realm: change it in the admin console, or delete the realm
+# and let the operator import it again.
+apiVersion: k8s.keycloak.org/v2beta1
+kind: KeycloakRealmImport
+metadata:
+  name: lab
+  namespace: keycloak
+spec:
+  keycloakCRName: keycloak
+  # ${NAME} in the realm below is replaced with these values (realm-secrets.yaml)
+  placeholders:
+    SAM_PASSWORD:
+      secret:
+        name: realm-secrets
+        key: sam_password
+    ARGOCD_CLIENT_SECRET:
+      secret:
+        name: realm-secrets
+        key: argocd_client_secret
+    GRAFANA_CLIENT_SECRET:
+      secret:
+        name: realm-secrets
+        key: grafana_client_secret
+    OPENBAO_CLIENT_SECRET:
+      secret:
+        name: realm-secrets
+        key: openbao_client_secret
+  realm:
+    realm: lab
+    displayName: Lab platform
+    enabled: true
+    groups:
+      - name: platform-admins
+      - name: platform-viewers
+    users:
+      - username: sam
+        firstName: Sam
+        lastName: Admin
+        email: sam@lab.example.internal
+        emailVerified: true
+        enabled: true
+        groups:
+          - /platform-admins
+        credentials:
+          - type: password
+            value: ${SAM_PASSWORD}
+            temporary: false
+    clients:
+      - clientId: argocd
+        name: Argo CD
+        protocol: openid-connect
+        publicClient: false
+        secret: ${ARGOCD_CLIENT_SECRET}
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        redirectUris:
+          - https://argocd.apps.hub.172.19.0.3.nip.io/auth/callback
+        webOrigins:
+          - https://argocd.apps.hub.172.19.0.3.nip.io
+        protocolMappers: &groups
+          # Puts the user's groups into the token as the claim "groups"
+          - name: groups
+            protocol: openid-connect
+            protocolMapper: oidc-group-membership-mapper
+            config:
+              claim.name: groups
+              full.path: "false"
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+      - clientId: grafana
+        name: Grafana
+        protocol: openid-connect
+        publicClient: false
+        secret: ${GRAFANA_CLIENT_SECRET}
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        redirectUris:
+          - https://grafana.apps.hub.172.19.0.3.nip.io/login/generic_oauth
+        webOrigins:
+          - https://grafana.apps.hub.172.19.0.3.nip.io
+        protocolMappers: *groups
+      - clientId: openbao
+        name: OpenBao
+        protocol: openid-connect
+        publicClient: false
+        secret: ${OPENBAO_CLIENT_SECRET}
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        redirectUris:
+          - https://openbao.apps.hub.172.19.0.3.nip.io/ui/vault/auth/oidc/oidc/callback
+          # "bao login -method=oidc" from a laptop
+          - http://localhost:8250/oidc/callback
+        webOrigins:
+          - https://openbao.apps.hub.172.19.0.3.nip.io
+        protocolMappers: *groups

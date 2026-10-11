@@ -1,0 +1,22 @@
+# Keycloak's PostgreSQL database, run by CloudNativePG. The operator creates the user and
+# its password in the Secret "keycloak-db-app" (never in Git) and the Service "keycloak-db-rw".
+# Lab: 1 instance. Production: 3 instances (one primary, two standbys) and backups to S3.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: keycloak
+spec:
+  instances: 1
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+  storage:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 20m
+      memory: 128Mi
+    limits:
+      memory: 256Mi

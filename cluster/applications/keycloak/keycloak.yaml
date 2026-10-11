@@ -1,0 +1,36 @@
+# Keycloak itself. The operator creates the StatefulSet, the Service "keycloak-service"
+# and a temporary admin login in the Secret "keycloak-initial-admin" (never in Git).
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: keycloak-db-rw
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-app
+      key: username
+    passwordSecret:
+      name: keycloak-db-app
+      key: password
+  # The Gateway terminates TLS (httproute.yaml); Keycloak itself speaks plain HTTP inside
+  http:
+    httpEnabled: true
+  hostname:
+    hostname: https://keycloak.apps.hub.172.19.0.3.nip.io
+  # Trust the X-Forwarded-* headers from the Gateway (the original host and https)
+  proxy:
+    headers: xforwarded
+  # Exposed through the Gateway, not an Ingress
+  ingress:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
