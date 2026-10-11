@@ -1,0 +1,44 @@
+# Open Cluster Management hub (OLM) with governance: registers managed clusters and hands
+# them policies.
+# Configuration: apps/ocm/ (values.yaml = the governance chart's settings)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ocm
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  sources:
+    # 1) The Helm chart, with the values file from this repository ($config)
+    - repoURL: https://open-cluster-management.io/helm-charts
+      chart: governance-policy-propagator
+      targetRevision: 0.20.1
+      helm:
+        releaseName: governance-policy-propagator
+        valueFiles:
+          - $config/apps/ocm/values.yaml
+    # 2) This repository: the app's own YAML in apps/ocm/ (and $config for the values)
+    - repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+      targetRevision: main
+      path: apps/ocm
+      ref: config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: open-cluster-management
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

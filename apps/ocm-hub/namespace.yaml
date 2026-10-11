@@ -1,5 +1,0 @@
-# Same namespace name ACM uses on OpenShift
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: open-cluster-management

@@ -1,0 +1,6 @@
+# Helm values for the "governance-policy-propagator" chart.
+# Used by: clusters/k3d-hub-01/ocm.yaml
+
+args:
+  # Placement only: the old PlacementRule API is not installed
+  disablePlacementRule: true

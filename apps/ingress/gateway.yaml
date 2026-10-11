@@ -5,6 +5,8 @@ kind: Gateway
 metadata:
   name: apps
   namespace: openshift-ingress
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   gatewayClassName: openshift-default
   listeners:

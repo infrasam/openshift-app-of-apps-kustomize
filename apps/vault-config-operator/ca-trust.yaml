@@ -5,6 +5,8 @@ kind: Certificate
 metadata:
   name: vault-ca-trust
   namespace: vault-config-operator
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   secretName: vault-ca-trust
   commonName: vault-config-operator

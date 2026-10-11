@@ -1,5 +1,5 @@
 # Where Grafana reads from: Thanos Query (metrics from every cluster), Alertmanager
-# (the alerts from apps/alerting/) and Loki (logs, at the bottom).
+# (the alerts from apps/alertmanager/) and Loki (logs, at the bottom).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDatasource
 metadata:
@@ -33,7 +33,7 @@ spec:
     uid: alertmanager
     type: alertmanager
     access: proxy
-    url: http://alertmanager-operated.thanos.svc:9093
+    url: http://alertmanager-operated.alertmanager.svc:9093
     jsonData:
       implementation: prometheus
 ---

@@ -1,11 +1,11 @@
-# Hub-only: the hub's policies for the fleet (see apps/policies/).
+# The fleet's policies: what every managed cluster gets (for example its own Argo CD).
+# Configuration: apps/policies/
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: policies
   namespace: openshift-gitops
   annotations:
-    # After governance-propagator (1), which brings the Policy type
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
@@ -21,3 +21,12 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

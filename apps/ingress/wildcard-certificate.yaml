@@ -5,12 +5,14 @@ metadata:
   name: apps-wildcard
   # The Gateway reads its certificate from its own namespace
   namespace: openshift-ingress
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   secretName: apps-wildcard-tls
   dnsNames:
     - "*.apps.hub.172.19.0.3.nip.io"
-  duration: 2160h      # 90 days
-  renewBefore: 720h    # renew 30 days before expiry
+  duration: 2160h # 90 days
+  renewBefore: 720h # renew 30 days before expiry
   privateKey:
     algorithm: ECDSA
     size: 256

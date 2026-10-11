@@ -4,6 +4,8 @@ kind: HTTPRoute
 metadata:
   name: http-to-https
   namespace: openshift-ingress
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   parentRefs:
     - name: apps

@@ -1,0 +1,34 @@
+# Creates and registers the managed clusters: one Application per folder in
+# apps/cluster-provisioning/clusters/, plus the credentials every cluster gets.
+# Configuration: apps/cluster-provisioning/
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-provisioning
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/infrasam/openshift-app-of-apps-kustomize.git
+    targetRevision: main
+    path: apps/cluster-provisioning
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      # Never prune automatically: removing a cluster is a deliberate step
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      # The operator and the objects it serves are in the same app: the objects wait
+      # (retry below) until the operator has installed their types
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

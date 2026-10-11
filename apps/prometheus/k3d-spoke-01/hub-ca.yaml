@@ -5,6 +5,8 @@ kind: ConfigMap
 metadata:
   name: hub-ca
   namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 data:
   ca.crt: |
     -----BEGIN CERTIFICATE-----
