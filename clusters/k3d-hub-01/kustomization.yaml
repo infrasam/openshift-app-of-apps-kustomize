@@ -46,3 +46,5 @@ resources:
   - grafana.yaml                    # 6
   # - loki.yaml                     # 6  disabled together with loki-operator.yaml
 
+  # Security scanning
+  # - trivy-operator.yaml           # 5  disabled: scan jobs need more RAM than the lab has; uncomment to enable
