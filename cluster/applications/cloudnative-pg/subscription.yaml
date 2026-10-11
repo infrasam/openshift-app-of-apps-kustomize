@@ -1,0 +1,19 @@
+# CloudNativePG via OLM: PostgreSQL databases as Kubernetes objects (here: Keycloak's
+# database, applications/keycloak/database.yaml).
+# Lab: upstream package from operatorhubio-catalog. Production: the certified
+# "cloudnative-pg" (EDB) from certified-operators, or the company's database service.
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cloudnative-pg
+  # Watches all namespaces: "operators" already has a global OperatorGroup
+  # (production: openshift-operators)
+  namespace: operators
+spec:
+  name: cloudnative-pg
+  channel: stable-v1
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+  startingCSV: cloudnative-pg.v1.30.1
+  # TODO(prod): Manual approval so upgrades are deliberate, not automatic
+  installPlanApproval: Automatic
