@@ -1,0 +1,20 @@
+# Helm values for the "vault-config-operator" chart.
+# Used by: clusters/k3d-hub-01/vault-config-operator.yaml
+
+# Webhook certificates from cert-manager (on OpenShift: the service CA does it)
+enableCertManager: true
+# No Prometheus yet (comes with the monitoring phase)
+enableMonitoring: false
+env:
+  - name: VAULT_ADDR
+    value: https://openbao-active.openbao.svc:8200
+  - name: VAULT_CACERT
+    value: /vault-ca/ca.crt
+volumes:
+  - name: vault-ca
+    secret:
+      secretName: vault-ca-trust
+volumeMounts:
+  - name: vault-ca
+    mountPath: /vault-ca
+    readOnly: true

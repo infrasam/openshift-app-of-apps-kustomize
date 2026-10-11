@@ -1,6 +1,5 @@
 # Runs on every pull request: every folder with a kustomization.yaml must render, and every
 # object must match its schema. A broken file is stopped before it reaches main and Argo CD.
-# Production: the same two commands in the internal CI (e.g. GitLab CI), with mirrored schemas.
 name: validate
 
 on:
@@ -22,8 +21,8 @@ jobs:
       - name: Render and validate every kustomization
         run: |
           fail=0
-          # Helm charts under helm/ are rendered by Argo CD with cluster values, not here
-          for dir in $(find cluster -name kustomization.yaml -not -path '*/helm/*' -exec dirname {} \; | sort); do
+          # Every kustomization: the configuration in apps/ and the Application lists in clusters/
+          for dir in $(find apps clusters -name kustomization.yaml -exec dirname {} \; | sort); do
             echo "::group::$dir"
             if ! kubectl kustomize "$dir" > /tmp/rendered.yaml; then
               echo "::error::$dir does not render"; fail=1; echo "::endgroup::"; continue

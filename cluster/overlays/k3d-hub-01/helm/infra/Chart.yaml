@@ -1,6 +1,0 @@
-apiVersion: v2
-name: infra
-description: Argo CD Applications for this cluster (app-of-apps layer)
-type: application
-version: 0.1.0
-

@@ -1,190 +1,128 @@
-# OpenShift fleet GitOps (app-of-apps + Kustomize)
+# OpenShift fleet GitOps (app of apps)
 
-A GitOps repository for running a **fleet of Kubernetes clusters from one hub**, in the same way
-OpenShift, Red Hat Advanced Cluster Management (RHACM) and OpenShift GitOps do it in production.
-The hub creates clusters from Git and registers them. Handing each cluster over to its own Argo CD
-is the next phase (see [Status](#status)).
+A hub cluster that creates, registers and configures other clusters, all from this Git repository
+with Argo CD. It runs on k3d (Kubernetes in Docker) and uses the same building blocks as an
+OpenShift fleet: operators through OLM, Gateway API ingress, cert-manager, OpenBao with External
+Secrets, Open Cluster Management (the upstream of RHACM), Prometheus/Thanos, Grafana and Loki.
 
-The repository runs as a **lab on a laptop** (k3d, no domain, no Red Hat subscription), using the
-open-source upstream of every product. Every pattern maps one-to-one to real OpenShift + RHACM.
-To create child clusters in vCenter from Git with an existing RHACM hub (proof of concept), see
-[docs/openshift-implementation.md](docs/openshift-implementation.md).
-To issue certificates from Active Directory Certificate Services with cert-manager, see
-[docs/openshift-cert-manager-adcs.md](docs/openshift-cert-manager-adcs.md).
-To run the secret chain (OpenBao, External Secrets Operator, secrets for applications) on
-OpenShift, see [docs/openshift-secrets-openbao-eso.md](docs/openshift-secrets-openbao-eso.md).
-
-## How it works
-
-```mermaid
-flowchart LR
-    git[(Git repo)] -->|root app| hubargo[Hub Argo CD]
-    hubargo --> base[Every cluster: base<br/>OLM, Argo CD, cert-manager, CA,<br/>ingress, External Secrets]
-    hubargo --> hubapps[Hub only<br/>OCM hub, Cluster API,<br/>OpenBao]
-    hubargo -->|ApplicationSet<br/>per managed-clusters/ folder| prov[Spoke provisioning<br/>Cluster + CNI +<br/>ManagedCluster]
-    prov -->|Cluster API| spoke[Spoke cluster]
-    prov -->|auto-import| ocm[OCM hub]
-    ocm -->|klusterlet| spoke
-```
-
-1. **Bootstrap once.** `scripts/bootstrap.sh` creates the hub, installs OLM and the Argo CD
-   operator, and installs a small Helm chart with a `root` Application. From then on, Git owns
-   the cluster.
-2. **App of apps.** `root` renders `helm/infra`, which creates the `infra` Application. `infra`
-   points to the cluster's Kustomize overlay, and every entry in the overlay is itself an Argo CD
-   Application. Sync waves order them.
-3. **A new cluster is a new folder.** An ApplicationSet on the hub turns every folder in the
-   hub's inventory, `cluster/overlays/<hub>/managed-clusters/<cluster>/`, into an Application. That
-   Application creates the cluster, installs its network, and registers it in Open Cluster
-   Management (OCM).
-4. **Zero-touch join.** OCM imports the new cluster automatically, and it reports as
-   `JOINED` / `AVAILABLE` on the hub.
-
-## Repository layout
-
-```
-cluster/
-├── base/                                  # Argo CD Applications every cluster gets (wave)
-│   ├── kustomization.yaml
-│   ├── olm.yaml                           # -10  OLM (built into OpenShift)
-│   ├── argocd.yaml                        #  -5  Argo CD (= OpenShift GitOps)
-│   ├── cert-manager.yaml                  #  -3  cert-manager operator via OLM
-│   ├── lab-ca.yaml                        #  -2  internal CA (= corporate CA issuer)
-│   ├── gateway-api.yaml                   #  -2  Gateway API CRDs (lab only: OpenShift ships them)
-│   ├── sail-operator.yaml                 #  -1  Istio operator via OLM (= OpenShift Service Mesh)
-│   ├── external-secrets.yaml              #  -1  External Secrets Operator
-│   ├── ingress.yaml                       #   0  Gateway for *.apps (= OpenShift router)
-│   └── argocd-route.yaml                  #   1  Argo CD UI through the Gateway
-├── applications/                          # WHAT is installed: manifests and charts
-│   ├── cert-manager/                      # Subscription
-│   ├── lab-ca/                            # self-signed root + ClusterIssuer lab-ca
-│   ├── sail-operator/                     # Subscription
-│   ├── ingress/                           # Istio, GatewayClass, Gateway, wildcard cert, redirect
-│   ├── argocd-route/                      # HTTPRoute
-│   ├── ocm-hub/                           # OCM hub via OLM (= RHACM)
-│   ├── openbao-config/                    # what OpenBao needs before it starts
-│   │   ├── namespace.yaml
-│   │   ├── certificate.yaml               # TLS from lab-ca
-│   │   ├── tlsroute.yaml                  # UI through the Gateway (TLS passthrough)
-│   │   └── serviceaccount-admin.yaml      # identity administrators log in with
-│   ├── secret-store/                      # the ESO connection, after OpenBao runs
-│   │   ├── serviceaccount.yaml            # identity ESO logs in with
-│   │   └── clustersecretstore.yaml        # ESO -> OpenBao
-│   └── secret-demo/                       # ExternalSecret demo
-└── overlays/
-    └── k3d-hub-01/                        # the hub
-        ├── k3d-cluster.yaml               # how the hub itself is created
-        ├── kustomization.yaml             # ../../base + the files below
-        ├── ocm-hub.yaml                   # 0  Application: OCM hub
-        ├── capi.yaml                      # 1  Application: Cluster API (= Hive)
-        ├── openbao-config.yaml            # 0  Application: applications/openbao-config/
-        ├── openbao.yaml                   # 1  Application: OpenBao Helm chart, settings inline
-        ├── secret-store.yaml              # 2  Application: applications/secret-store/
-        ├── spoke-provisioning.yaml        # 2  ApplicationSet over managed-clusters/*
-        ├── secret-demo.yaml               # 3  Application: ESO demo
-        ├── patch/argocd-patch.yaml
-        ├── managed-clusters/              # applied to the HUB: the clusters this hub owns
-        │   └── k3d-spoke-01/              # how this spoke is created and registered
-        │       ├── kustomization.yaml
-        │       ├── namespace.yaml
-        │       ├── cluster.yaml           # Cluster API Cluster (= Hive ClusterDeployment)
-        │       ├── controlplane.yaml      # (= install-config / MachinePool)
-        │       ├── cni.yaml
-        │       ├── cni/kindnet.yaml       # pod network (= networkType in install-config)
-        │       ├── managedcluster.yaml    # identical API in RHACM
-        │       └── import-rbac.yaml
-        └── helm/
-            ├── bootstrap/                 # installed once with helm: root app, AppProject
-            └── infra/                     # creates the infra Application
-docs/
-├── openshift-implementation.md            # child clusters from Git on an existing RHACM hub
-├── openshift-cert-manager-adcs.md         # cert-manager + Active Directory Certificate Services
-└── openshift-secrets-openbao-eso.md       # OpenBao + External Secrets on OpenShift
-scripts/
-└── bootstrap.sh                           # create a lab cluster and hand it to Git
-```
-
-**Every app is two things:** what is installed lives in `cluster/applications/<app>/`, and
-*that* it is installed on a cluster (and in which wave) is an Argo CD Application in `base/`
-(every cluster) or in the cluster's overlay (only that cluster). OpenBao is hub-only: there is
-one secret store for the whole fleet. OpenBao itself is the upstream Helm chart with its
-settings inline in `openbao.yaml`. What it needs before it starts is plain YAML in
-`openbao-config/` (wave 0), and the ESO connection that needs it running is in `secret-store/`
-(wave 2). A sync wave only starts when everything before it is healthy, so each part must come
-after what it depends on.
-
-**A folder belongs to the cluster it is applied to.** How a spoke is created is applied to the
-hub, so it lives in the hub's `managed-clusters/` inventory. What runs on the spoke will live in
-the spoke's own overlay, `cluster/overlays/<cluster>/`, from the next phase (see Status). The
-hub's ApplicationSet only reads its own inventory, so a second hub never picks up clusters it does
-not own, and `managed-clusters/` is the one path to protect with review. Three kinds of
-configuration are kept apart:
-
-| What | Applied to | By |
-|---|---|---|
-| How the cluster is **created and registered** (`<hub>/managed-clusters/<cluster>/`) | The hub | The hub's Argo CD, through the ApplicationSet |
-| What **runs inside** the cluster (`overlays/<cluster>/`, `base` + patches) | The cluster itself | The cluster's own Argo CD (next phase) |
-| **Credentials** for creating clusters (vCenter, pull secret, install-config) | The hub, into the cluster's namespace | By hand for now, never in Git. Later from a secret store through External Secrets, with the same Secret names |
-
-**`base` is what every cluster must have, not a menu.** Optional apps live in
-`cluster/applications/`, and a cluster lists them in its own `kustomization.yaml`. If one cluster
-needs to skip something from `base`, use a delete patch in that cluster's `patch/` folder, with a
-comment that says why:
-
-```yaml
-# cluster/overlays/<cluster>/patch/remove-cert-manager.yaml
-$patch: delete
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: cert-manager
-  namespace: openshift-gitops
-```
-
-Kustomize fails the build if the patch matches nothing, so a typo shows up in the pull request.
-When many clusters skip the same app, move it out of `base` instead.
-
-## Lab to production mapping
-
-| Production (OpenShift + RHACM on vSphere) | This lab |
+| Cluster | Role |
 |---|---|
-| OpenShift cluster | k3d (hub), Cluster API Docker clusters (spokes) |
-| OLM (built in) | OLM installed as an Argo CD Application |
-| OpenShift GitOps operator | Upstream Argo CD operator via the `gitops-operator` chart |
-| cert-manager Operator for Red Hat OpenShift | Upstream cert-manager operator via OLM |
-| Corporate CA (ADCS / Vault PKI) `ClusterIssuer` | Self-signed root + `ClusterIssuer` `lab-ca` |
-| OpenShift router, Routes, Gateway API (Ingress Operator + Service Mesh) | Gateway API served by Istio (Sail Operator via OLM), same `GatewayClass` name |
-| Corporate Vault | OpenBao (Helm wrapper chart, Raft, TLS from `lab-ca`) |
-| External Secrets Operator for Red Hat OpenShift (OLM) | Upstream External Secrets Operator (Helm; the OperatorHub.io package is outdated) |
-| RHACM / MultiClusterHub | Open Cluster Management `ClusterManager` |
-| Hive `ClusterDeployment` on vSphere | Cluster API `Cluster` + Docker provider |
-| `networkType: OVNKubernetes` in install-config | kindnet via `ClusterResourceSet` |
-| ACM import controller (built in) | OCM `ClusterImporter` feature gate |
-| `ManagedCluster` | `ManagedCluster` (same API) |
-| vCenter credentials, pull secret and install-config: from Vault through ESO | Not needed: Docker needs no credentials |
-| Internal Git server | GitHub (public, so no environment data or secrets) |
+| `k3d-hub-01` | Hub: Argo CD, secrets, cluster creation, metrics/logs/alerts for the fleet |
+| `k3d-spoke-01` | Managed cluster, created by the hub; runs its own Argo CD |
+
+## Layout
+
+The repository has two halves: **what** gets installed (`apps/`) and **where** (`clusters/`).
+
+```
+apps/                         WHAT: the configuration of every app, one folder per app
+  cert-manager/                 plain YAML + kustomization.yaml
+  openbao/values.yaml           Helm values for an upstream chart
+  secret-store/
+    k3d-hub-01/                 a version for one cluster (only when clusters differ)
+    k3d-spoke-01/
+  ...
+
+clusters/                     WHERE: one folder per cluster, one Application file per app
+  k3d-hub-01/
+    kustomization.yaml          the list of apps on this cluster, in install order
+    cert-manager.yaml           Argo CD Application -> apps/cert-manager
+    openbao.yaml                Argo CD Application -> chart + apps/openbao/values.yaml
+    ...
+  k3d-spoke-01/
+    kustomization.yaml
+    ...
+
+bootstrap/                    one-time installation of the hub (k3d cluster, OLM, Argo CD, root app)
+```
+
+### The rule
+
+1. **Every app has one folder in `apps/`.** All its configuration lives there, and nothing else does.
+2. **Every cluster has one folder in `clusters/`.** It holds one Argo CD `Application` file per app
+   that runs on that cluster, and a `kustomization.yaml` that lists them.
+3. **When two clusters need different configuration for the same app**, the app folder gets one
+   subfolder per cluster (`apps/<app>/<cluster>/`). When the configuration is the same, the
+   clusters share the folder.
+
+There are no patches, overlays or base layers: what you see in a file is what gets applied.
+
+### How Argo CD reads it
+
+```
+root Application (created once by bootstrap/)
+  └─ clusters/k3d-hub-01/kustomization.yaml       list of Application files
+       ├─ cert-manager.yaml  ──>  apps/cert-manager/      the actual objects
+       ├─ openbao.yaml       ──>  openbao chart + apps/openbao/values.yaml
+       └─ ...
+```
+
+The root Application points at the cluster's folder. Every file listed there is an
+`Application`, and each `Application` points at its configuration in `apps/`. A spoke works the
+same way: the hub's `gitops` policy gives it Argo CD and a root Application that points at
+`clusters/<spoke>/`.
+
+**Order.** Each `Application` has a `sync-wave` annotation. Argo CD installs the lowest wave
+first and waits until it is healthy before the next one. Operators come before the objects that
+use them, for example cert-manager (`-3`) before the lab CA (`-2`).
+
+## Adding something
+
+### A new app from your own YAML
+
+1. Create `apps/<app>/` with the YAML files and a `kustomization.yaml` that lists them.
+2. Copy an `Application` file that uses plain YAML, for example `clusters/k3d-hub-01/thanos.yaml`,
+   to `clusters/<cluster>/<app>.yaml`. Change `metadata.name`, `spec.source.path`, the
+   destination namespace and the sync-wave.
+3. Add `<app>.yaml` to `clusters/<cluster>/kustomization.yaml`.
+4. Check it renders: `kubectl kustomize apps/<app>` and `kubectl kustomize clusters/<cluster>`.
+
+### A new app from a Helm chart
+
+1. Create `apps/<app>/values.yaml` with the chart's values.
+2. Copy an `Application` file that uses a chart, for example `clusters/k3d-hub-01/seaweedfs.yaml`.
+   Change the chart name, version, `releaseName`, the values file path and the namespace.
+3. Add it to `clusters/<cluster>/kustomization.yaml`.
+
+### An operator from OLM
+
+Use the plain-YAML pattern with one `Subscription` in `apps/<operator>/subscription.yaml`, for
+example `apps/grafana-operator/`. Operators that watch all namespaces go into the `operators`
+namespace, which already has an `OperatorGroup`.
+
+### The same app on another cluster
+
+Add an `Application` file for it in `clusters/<other cluster>/` and list it there. If the other
+cluster needs different configuration, move the existing files into `apps/<app>/<cluster>/` and
+add a folder for the new cluster next to it.
+
+### A new managed cluster
+
+1. Copy `apps/cluster-provisioning/k3d-spoke-01/` to `apps/cluster-provisioning/<new cluster>/` and
+   replace the cluster name and addresses. The hub's `spoke-provisioning` ApplicationSet creates an
+   Application for every folder there, which creates and registers the cluster.
+2. Create `clusters/<new cluster>/` with the apps the cluster should run (copy
+   `clusters/k3d-spoke-01/`), and folders `apps/<app>/<new cluster>/` for the cluster-specific apps
+   (`secret-store`, `prometheus`, `log-collector`).
 
 ## Safety rails
 
-- **Clusters are never deleted by Git by accident.** The ApplicationSet uses
-  `preserveResourcesOnDeletion`. Its Applications have no resources finalizer. `Cluster` and
-  `ManagedCluster` carry `Prune=false,Delete=false`.
-- **The infra layer is fenced.** The `infra` AppProject may only create `Application` and
-  `ApplicationSet` objects. The project is installed by Helm, so Git cannot remove its own
-  guardrails.
-- **Pinned versions everywhere.** Charts, operators, Kubernetes and the CNI image all have fixed
-  versions, so a rebuilt cluster is identical to the old one.
-- **No secrets in Git.** Kubeconfigs, keys and local values files are ignored (see `.gitignore`).
-  Local-only values use the `*.local.yaml` suffix.
-- **Every change goes through a pull request.** Run `kubectl kustomize <path>` before committing.
-  If it fails locally, it fails in Argo CD.
+- **Clusters are never deleted by Git by accident.** The ApplicationSet keeps its resources when
+  an Application is removed, and `Cluster` and `ManagedCluster` carry `Prune=false,Delete=false`.
+- **The root Application is fenced.** Its AppProject (`infra`) may only create `Application` and
+  `ApplicationSet` objects. The project is installed by Helm at bootstrap, so Git cannot remove it.
+- **Pinned versions everywhere.** Charts, operators, images and Kubernetes have fixed versions, so
+  a rebuilt cluster is identical to the old one.
+- **No secrets in Git.** Passwords and keys live in OpenBao and reach the clusters through External
+  Secrets. Kubeconfigs, keys and `*.local.yaml` files are ignored (see `.gitignore`).
+- **Every change goes through a pull request.** CI renders every kustomization and validates it
+  against the Kubernetes and CRD schemas (`.github/workflows/validate.yaml`).
 
 ## Running the lab
 
 **Requirements:** Docker, `k3d`, `kubectl`, `helm`, `yq`, `git`, and about 12 GB of free RAM.
 
-Several clusters share the host kernel, so raise the inotify limits first. Without this,
-kube-proxy on the spokes crashes with `too many open files`:
+Several clusters share the host kernel, so raise the inotify limits first:
 
 ```bash
 sudo tee /etc/sysctl.d/99-kubernetes-lab.conf <<'EOF'
@@ -194,30 +132,16 @@ EOF
 sudo sysctl --system
 ```
 
-**Create the hub:**
+**Create the hub.** This creates the k3d cluster, installs OLM and Argo CD, and creates the root
+Application. From then on, Argo CD installs everything in `clusters/k3d-hub-01/`:
 
 ```bash
-scripts/bootstrap.sh k3d-hub-01
+bootstrap/bootstrap.sh k3d-hub-01
 kubectl -n openshift-gitops get applications
 ```
 
-**Trust the lab CA** (once per hub rebuild), so the browser and `curl` accept the certificates:
-
-```bash
-kubectl -n operators get secret lab-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > ~/lab-root-ca.crt
-sudo cp ~/lab-root-ca.crt /usr/local/share/ca-certificates/lab-root-ca.crt && sudo update-ca-certificates
-```
-
-Import `~/lab-root-ca.crt` in the browser as a certificate authority too.
-
-**Open the Argo CD UI** at <https://argocd.apps.hub.172.19.0.3.nip.io> and log in as `admin`:
-
-```bash
-kubectl -n openshift-gitops get secret argocd-cluster -o jsonpath='{.data.admin\.password}' | base64 -d; echo
-```
-
 **Create OpenBao's unseal key** (once per hub, never in Git). OpenBao then initializes,
-configures and unlocks itself from `cluster/overlays/k3d-hub-01/openbao.yaml`:
+configures and unlocks itself (`apps/openbao/values.yaml`):
 
 ```bash
 umask 077
@@ -225,55 +149,59 @@ openssl rand -out ~/openbao-unseal.key 32
 kubectl -n openbao create secret generic openbao-unseal-key --from-file=unseal.key=$HOME/openbao-unseal.key
 ```
 
-**Log in to OpenBao as admin.** The token is valid for one hour; paste it in the UI (method
-*Token*):
+**Trust the lab CA** (once per hub rebuild), so the browser and `curl` accept the certificates.
+Import `~/lab-root-ca.crt` in the browser as a certificate authority too:
 
 ```bash
+kubectl -n operators get secret lab-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > ~/lab-root-ca.crt
+sudo cp ~/lab-root-ca.crt /usr/local/share/ca-certificates/lab-root-ca.crt && sudo update-ca-certificates
+```
+
+### What runs where
+
+| UI | Address | Login |
+|---|---|---|
+| Argo CD | <https://argocd.apps.hub.172.19.0.3.nip.io> | `admin`, password below |
+| OpenBao | <https://openbao.apps.hub.172.19.0.3.nip.io> | token below (method *Token*) |
+| Grafana | <https://grafana.apps.hub.172.19.0.3.nip.io> | `admin`, password below |
+| Thanos Query | `kubectl -n thanos port-forward svc/thanos-query 9090` | none |
+| Alertmanager | `kubectl -n thanos port-forward svc/alertmanager-operated 9093` | none |
+
+```bash
+# Argo CD
+kubectl -n openshift-gitops get secret argocd-cluster -o jsonpath='{.data.admin\.password}' | base64 -d; echo
+# OpenBao admin token (valid for one hour)
 kubectl -n openbao create token openbao-admin | jq -Rc '{role: "admin", jwt: .}' \
   | curl -s -X POST --data @- https://openbao.apps.hub.172.19.0.3.nip.io/v1/auth/kubernetes/login \
   | jq -r .auth.client_token
+# Grafana
+kubectl -n grafana get secret grafana-admin-credentials -o jsonpath='{.data.GF_SECURITY_ADMIN_PASSWORD}' | base64 -d; echo
 ```
 
-The UI is at <https://openbao.apps.hub.172.19.0.3.nip.io>.
+**Metrics and logs.** Every spoke runs Prometheus and a log collector and sends to the hub:
+metrics to Thanos (`https://thanos-receive.apps.hub...`), logs to Loki
+(`https://loki.apps.hub...`). Both are stored in S3 (SeaweedFS). In Grafana, the dashboard
+*Fleet overview* shows every cluster; the data source *Loki* has the logs, labelled
+`k8s_cluster_name`, `k8s_namespace_name` and `k8s_pod_name`.
 
-**Follow a spoke being created:**
-
-```bash
-kubectl -n k3d-spoke-01 get cluster,kubeadmcontrolplane,machines
-kubectl get managedclusters        # JOINED and AVAILABLE become True
-```
-
-**Reach the spoke.** The kubeconfig is an admin credential, so keep it outside the repo:
+### The spoke
 
 ```bash
+kubectl -n k3d-spoke-01 get cluster,kubeadmcontrolplane,machines    # being created
+kubectl get managedclusters                                         # JOINED and AVAILABLE
+# Its kubeconfig is an admin credential: keep it outside the repo
 kubectl -n k3d-spoke-01 get secret k3d-spoke-01-kubeconfig -o jsonpath='{.data.value}' \
   | base64 -d > /tmp/k3d-spoke-01.kubeconfig
 kubectl --kubeconfig /tmp/k3d-spoke-01.kubeconfig get nodes
 ```
 
-## Status
+## Lab limitations
 
-| Phase | State |
-|---|---|
-| Hub: OLM, Argo CD, app of apps | Done |
-| cert-manager | Done |
-| OCM hub + Cluster API | Done |
-| Spoke provisioning from Git, CNI, auto-import into OCM | Done |
-| cert-manager via OLM, internal CA | Done |
-| Gateway API ingress (Istio), Argo CD through the Gateway | Done |
-| OpenBao + External Secrets, `ClusterSecretStore` in the OpenBao chart | Done |
-| `ClusterExternalSecret`, lab root CA key in OpenBao | Next |
-| Argo CD + root app on the spoke, installed by the hub | Planned |
-| Security: OIDC login, OCM governance policies, NetworkPolicies | Planned |
-| Backup and restore (Velero), disconnected mirror | Planned |
-| Monitoring and logging | Later |
-
-**Known lab limitations:**
-- Spokes are vanilla Kubernetes, so there are no Routes, SCCs or other OpenShift-only APIs.
-- The Cluster API Docker load balancer listens on `0.0.0.0`.
-- After a restart of Docker, start the spoke again: `docker start $(docker ps -aq --filter name=k3d-spoke-01)`.
-- The hub's apps domain is `*.apps.hub.172.19.0.3.nip.io`: `172.19.0.3` is the hub's fixed address
-  on the Docker network `kind`, so the name works from the laptop **and** from inside the spokes
-  (which send metrics and logs to the hub). All lab containers have fixed addresses on that
-  network (hub 172.19.0.3 and .5, spoke 172.19.0.2 and .4), so a Docker restart keeps them.
-- Spokes get their own apps in `cluster/overlays/<spoke>/apps/`; they do not use `base`.
+- Clusters are vanilla Kubernetes: there are no Routes, SCCs or other OpenShift-only APIs. Ingress
+  uses the Gateway API, which OpenShift supports too.
+- The hub's apps domain is `*.apps.hub.172.19.0.3.nip.io`. `172.19.0.3` is the hub's fixed address
+  on the Docker network `kind`, so the names work from the laptop and from inside the spokes. All
+  lab containers have fixed addresses (hub 172.19.0.3 and .5, spoke 172.19.0.2 and .4).
+- **After a reboot**, the spoke's network plugin (kindnet) can keep the addresses of pods that no
+  longer exist. When new pods hang in `ContainerCreating` with `no IPs available`, the reservations
+  in `/var/lib/cni-kindnet/cni.db` on the spoke node must be cleared and the stuck pods restarted.

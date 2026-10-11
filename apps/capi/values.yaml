@@ -1,0 +1,17 @@
+# Helm values for the "cluster-api-operator" chart.
+# Used by: clusters/k3d-hub-01/capi.yaml
+
+# All providers pinned to the same Cluster API release
+core:
+  cluster-api:
+    version: v1.14.2
+bootstrap:
+  kubeadm:
+    version: v1.14.2
+controlPlane:
+  kubeadm:
+    version: v1.14.2
+# Docker provider: needs the host's Docker socket (see k3d-cluster.yaml).
+infrastructure:
+  docker:
+    version: v1.14.2

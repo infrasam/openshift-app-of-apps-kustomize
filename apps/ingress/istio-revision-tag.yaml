@@ -1,0 +1,10 @@
+# Makes the "openshift-gateway" control plane the default revision, so it handles
+# Gateways without an istio.io/rev label (istiod skips them otherwise, silently).
+apiVersion: sailoperator.io/v1
+kind: IstioRevisionTag
+metadata:
+  name: default
+spec:
+  targetRef:
+    kind: Istio
+    name: openshift-gateway
